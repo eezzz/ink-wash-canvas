@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b16</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b17</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -257,10 +257,11 @@ void main () {
   vec2 p = vUv - point;
   p.x *= aspectRatio;
   float d = sqrt(dot(p, p) / radius);
-  // 实心笔头：水分多边缘润，水分少边缘利
-  float edge0 = mix(0.90, 0.72, wetness);
-  float core = 1.0 - smoothstep(edge0, 1.0, d);
   float r = sqrt(radius);
+  // 实心笔头：水分多边缘润，水分少边缘利；柔边有绝对下限，锋尖小 stamp 依然有墨晕质感
+  float edge0 = mix(0.90, 0.72, wetness);
+  float band = max(1.0 - edge0, 0.0035 / max(r, 1e-4));
+  float core = 1.0 - smoothstep(1.0 - band, 1.0, d);
   vec2 perp = vec2(-dir.y, dir.x);
   float across = dot(p, perp) / r;
   // 飞白：仅墨量偏低时出现宽笔毫缝隙，不产生细碎毛刺
@@ -407,6 +408,7 @@ in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
 out vec4 fragColor;
 uniform sampler2D uDye;
 uniform sampler2D uStroke;    // 毛笔当前笔画层
+uniform sampler2D uPreview;   // 尾段实时预览层
 uniform vec3 uStrokeColor;    // 当前笔画吸光度
 uniform float uInkStrength;
 uniform int uSurface; // 0 无纹理 / 1 宣纸 / 2 油画布
@@ -424,7 +426,8 @@ float vnoise (vec2 p) {
 }
 float dens (vec3 a) { return dot(a, vec3(0.3333)); }
 void main () {
-  vec3 absorb = texture(uDye, vUv).rgb + uStrokeColor * texture(uStroke, vUv).r;
+  vec3 absorb = texture(uDye, vUv).rgb
+              + uStrokeColor * max(texture(uStroke, vUv).r, texture(uPreview, vUv).r);
   vec2 px = gl_FragCoord.xy;
   vec3 col;
   if (uSurface == 0) {
@@ -538,7 +541,7 @@ function getResolution(resolution) {
     : { width: min, height: max };
 }
 
-let dye, velocity, divergence, curl, pressure, strokeLayer;
+let dye, velocity, divergence, curl, pressure, strokeLayer, previewLayer;
 function initFramebuffers() {
   const simRes = getResolution(config.SIM_RESOLUTION);
   const dyeRes = getResolution(config.DYE_RESOLUTION);
@@ -549,6 +552,7 @@ function initFramebuffers() {
   curl       = createFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
   pressure   = createDoubleFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
   strokeLayer = createDoubleFBO(dyeRes.width, dyeRes.height, gl.R16F, gl.RED, hf, gl.LINEAR); // 毛笔当前笔画层
+  previewLayer = createDoubleFBO(dyeRes.width, dyeRes.height, gl.R16F, gl.RED, hf, gl.LINEAR); // 尾段实时预览层
   initUndo(); // 撤销快照池随画布重建
 }
 
@@ -628,6 +632,7 @@ function render() {
   gl.uniform2f(displayProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
   gl.uniform1i(displayProgram.uniforms.uDye, dye.read.attach(0));
   gl.uniform1i(displayProgram.uniforms.uStroke, strokeLayer.read.attach(1));
+  gl.uniform1i(displayProgram.uniforms.uPreview, previewLayer.read.attach(2));
   const sAb = strokeInkColor();
   gl.uniform3f(displayProgram.uniforms.uStrokeColor, sAb.r, sAb.g, sAb.b);
   gl.uniform1f(displayProgram.uniforms.uInkStrength, config.INK_STRENGTH);
@@ -710,7 +715,8 @@ function strokeInkColor() { // 浓淡 → 墨色深浅
   return { r: ab.r * s, g: ab.g * s, b: ab.b * s };
 }
 function pressureW(pr) { const v = (pr && pr > 0) ? pr : 0.5; return 0.4 + 1.2 * v; }
-function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark) {
+function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark, layer) {
+  const Lyr = layer || strokeLayer;
   brushProgram.bind();
   gl.uniform2f(brushProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
   gl.uniform1f(brushProgram.uniforms.aspectRatio, canvas.width / canvas.height);
@@ -722,8 +728,15 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark) {
   gl.uniform1f(brushProgram.uniforms.darkness, dark !== undefined ? dark : 0.3 + 0.7 * ink);
   gl.uniform1f(brushProgram.uniforms.wetness, inkWater);
   gl.uniform1f(brushProgram.uniforms.seed, seed);
-  gl.uniform1i(brushProgram.uniforms.uTarget, strokeLayer.read.attach(0));
-  blit(strokeLayer.write); strokeLayer.swap();
+  gl.uniform1i(brushProgram.uniforms.uTarget, Lyr.read.attach(0));
+  blit(Lyr.write); Lyr.swap();
+}
+// 尾段实时预览：缓冲中的笔尾每次移动即时显示，抬笔时才定形
+function renderTailPreview() {
+  [previewLayer.read, previewLayer.write].forEach(clearFBOT);
+  if (!stroke) return;
+  for (const q of stroke.tailPts)
+    brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed, undefined, previewLayer);
 }
 function startStroke(p, pressure) {
   stroke = {
@@ -735,7 +748,9 @@ function startStroke(p, pressure) {
     speed: 0.2, t: performance.now(), t0: performance.now(),
     moved: false, travel: 0, rampLen: 0, tailPts: [], curv: 0
   };
-  // 不立即落墨：移动则露锋尖入，原地抬笔则顿笔成点
+  // 正式落墨延迟（移动则露锋尖入，原地抬笔则顿笔成点），但预览层即时给出笔触反馈
+  [previewLayer.read, previewLayer.write].forEach(clearFBOT);
+  brushStamp(p.x, p.y, 1, 0, stroke.lastW * 0.9, stroke.ink, stroke.seed, undefined, previewLayer);
 }
 function strokeTo(p, pressure, t) {
   if (!stroke) return;
@@ -791,6 +806,7 @@ function strokeTo(p, pressure, t) {
   }
   stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
   stroke.x = p.x; stroke.y = p.y;
+  renderTailPreview(); // 即时显示缓冲尾段，消除起笔延迟
 }
 function endStroke() {
   if (!stroke) return;
@@ -817,8 +833,8 @@ function endStroke() {
     for (const q of pts) {
       if (fast) {
         const f = Math.max((S - q.s) / L, 0);
-        // 内凹收敛（视觉≈1.4次），保留细墨带交给甩尾收尽
-        const w = Math.max(q.w * Math.pow(f, 2.8), q.w * 0.09);
+        // 饱满收敛（视觉≈0.8次，微凸有肚），锋腹留墨，末梢交给甩尾收尽
+        const w = Math.max(q.w * Math.pow(f, 1.6), q.w * 0.05);
         endW = w;
         const rFull = Math.sqrt(correctRadius((brushSize * q.w) / 100));
         const rNow  = Math.sqrt(correctRadius((brushSize * w) / 100));
@@ -834,13 +850,13 @@ function endStroke() {
       const rT = Math.sqrt(correctRadius((brushSize * last.w) / 100));
       let ang = Math.atan2(stroke.dirY, stroke.dirX);
       let ex = stroke.x, ey = stroke.y;
-      const extLen = rT * 1.8, steps = 14, ds = extLen / steps;
+      const extLen = rT * 1.2, steps = 14, ds = extLen / steps;
       for (let i = 1; i <= steps; i++) {
         ang += curv * ds * 0.8;
         ex += Math.cos(ang) * ds / aspect;
         ey += Math.sin(ang) * ds;
-        const w = endW * Math.pow(1 - i / steps, 1.4);
-        if (w < 0.006) break;
+        const w = endW * Math.pow(1 - i / steps, 1.1);
+        if (w < 0.004) break;
         const rNow = Math.sqrt(correctRadius((brushSize * w) / 100));
         const off = (rT - rNow) * 0.75 * side;
         brushStamp(ex - Math.sin(ang) * off / aspect, ey + Math.cos(ang) * off,
@@ -856,7 +872,7 @@ function endStroke() {
   const c = strokeInkColor();
   gl.uniform3f(strokeCompositeProgram.uniforms.sColor, c.r, c.g, c.b);
   blit(dye.write); dye.swap();
-  [strokeLayer.read, strokeLayer.write].forEach(f => {
+  [strokeLayer.read, strokeLayer.write, previewLayer.read, previewLayer.write].forEach(f => {
     gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -1026,11 +1042,13 @@ function clearFBOT(f) {
   gl.clear(gl.COLOR_BUFFER_BIT);
 }
 function clearCanvasOnly() {
-  [dye.read, dye.write, velocity.read, velocity.write, strokeLayer.read, strokeLayer.write].forEach(clearFBOT);
+  [dye.read, dye.write, velocity.read, velocity.write,
+   strokeLayer.read, strokeLayer.write, previewLayer.read, previewLayer.write].forEach(clearFBOT);
 }
 function restoreFrom(s) {
   copyTo(dye.write, s.texture); dye.swap();
-  [velocity.read, velocity.write, strokeLayer.read, strokeLayer.write].forEach(clearFBOT);
+  [velocity.read, velocity.write, strokeLayer.read, strokeLayer.write,
+   previewLayer.read, previewLayer.write].forEach(clearFBOT);
 }
 function undoOnce() {
   if (!undoStack.length) return;
