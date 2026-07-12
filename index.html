@@ -258,6 +258,9 @@ void main () {
   float bristle = vnoise(vec2(across * 3.5 + seed, seed * 7.31));
   float th = (1.0 - inkLevel) * 1.7 - 0.5; // 墨量 > 0.7 完全实心
   float mask = smoothstep(th, th + 0.35, bristle);
+  // 笔芯永远实心：飞白只出现在笔画两侧，不贯穿分叉
+  float centerSolid = 1.0 - smoothstep(0.35, 0.75, abs(across));
+  mask = max(mask, centerSolid);
   float v = core * mask * darkness;
   float base = texture(uTarget, vUv).r;
   fragColor = vec4(max(base, v), 0.0, 0.0, 1.0);
@@ -719,18 +722,24 @@ function strokeTo(p, pressure, t) {
   // 运笔速度：快提则细而枯，慢按则粗而润
   stroke.speed = stroke.speed * 0.65 + (dist / dtMs * 1000) * 0.35;
   const speedFactor = Math.min(Math.max(1.2 - stroke.speed * 0.55, 0.3), 1.2);
-  const w = pressureW(pressure) * speedFactor;
-  const rUV = Math.sqrt(correctRadius((brushSize * w) / 100));
-  const spacing = Math.max(rUV * 0.3, 0.0006);
-  const steps = Math.min(Math.ceil(dist / spacing), 80);
+  // 笔宽平滑过渡，避免宽度跳变
+  const targetW = pressureW(pressure) * speedFactor;
+  const wStart = stroke.lastW;
+  const wEnd = wStart + (targetW - wStart) * 0.35;
+  // 笔势方向平滑，避免噪声纹理抖动
+  let sdx = stroke.dirX * 0.5 + dx * 0.5, sdy = stroke.dirY * 0.5 + dy * 0.5;
+  const sl = Math.hypot(sdx, sdy) || 1; sdx /= sl; sdy /= sl;
+  const rUV = Math.sqrt(correctRadius((brushSize * wEnd) / 100));
+  const spacing = Math.max(rUV * 0.12, 0.0004); // 密集盖印 → 轮廓平滑无颗粒
+  const steps = Math.min(Math.ceil(dist / spacing), 200);
   const x0 = stroke.x, y0 = stroke.y;
   for (let i = 1; i <= steps; i++) {
     const tt = i / steps;
     const sx = x0 + (p.x - x0) * tt, sy = y0 + (p.y - y0) * tt;
     stroke.ink = Math.max(stroke.ink - (dist / steps) * 1.1, 0.22); // 行笔耗墨
-    brushStamp(sx, sy, dx, dy, w, stroke.ink, stroke.seed);
+    brushStamp(sx, sy, sdx, sdy, wStart + (wEnd - wStart) * tt, stroke.ink, stroke.seed);
   }
-  stroke.dirX = dx; stroke.dirY = dy; stroke.lastW = w;
+  stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
   stroke.x = p.x; stroke.y = p.y;
 }
 function endStroke() {
@@ -739,13 +748,14 @@ function endStroke() {
   const aspect = canvas.width / canvas.height;
   const rUV = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
   const len = rUV * 2.4;
-  const steps = 8;
+  const steps = 20; // 密集收锋，笔尖光滑
+  const solidInk = Math.max(stroke.ink, 0.75); // 收锋时笔尖聚拢，实心无飞白分叉
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     const sx = stroke.x + (stroke.dirX / aspect) * len * t;
     const sy = stroke.y + stroke.dirY * len * t;
     const w = Math.max(stroke.lastW * (1 - t) * (1 - t), 0.03); // 二次收细 → 尖锋
-    brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, Math.max(stroke.ink - t * 0.15, 0.2), stroke.seed);
+    brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed);
   }
   // 笔画合入染料场，清空笔画层
   strokeCompositeProgram.bind();
