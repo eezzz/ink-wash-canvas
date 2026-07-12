@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b17</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b18</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -828,39 +828,39 @@ function endStroke() {
     const aspect = canvas.width / canvas.height;
     // 毛笔形态：锋尖贴笔画一侧边缘收拢（弧线取内侧，直线微偏一侧），非对称圆锥
     const curv = Math.max(-8, Math.min(8, stroke.curv));
-    const side = Math.abs(curv) > 0.8 ? -Math.sign(curv) : 0.6;
+    const side = Math.abs(curv) > 0.8 ? -Math.sign(curv) * 0.6 : 0.3; // 贴边收敛，幅度收敛更柔和
     let endW = 0;
     for (const q of pts) {
       if (fast) {
         const f = Math.max((S - q.s) / L, 0);
         // 饱满收敛（视觉≈0.8次，微凸有肚），锋腹留墨，末梢交给甩尾收尽
-        const w = Math.max(q.w * Math.pow(f, 1.6), q.w * 0.05);
+        const w = Math.max(q.w * Math.pow(f, 1.6), q.w * 0.03);
         endW = w;
         const rFull = Math.sqrt(correctRadius((brushSize * q.w) / 100));
         const rNow  = Math.sqrt(correctRadius((brushSize * w) / 100));
-        const off = (rFull - rNow) * 0.75 * side; // 一侧边缘齐平，另一侧收拢
+        const off = (rFull - rNow) * 0.45 * side; // 微贴边，避免鲨鱼鳍
         brushStamp(q.x - q.dy * off / aspect, q.y + q.dx * off, q.dx, q.dy, w, q.ink, stroke.seed);
       } else {
         brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed); // 顿收圆头
       }
     }
     if (fast && endW > 0.008) {
-      // 出锋甩尾：越过抬笔点的细须，延续近段弧度，如笔毫离纸一甩
+      // 出锋甩尾：从收锋实际到达的贴边位置出发（无折角），弧线长甩、直线短收
       const last = pts[pts.length - 1];
       const rT = Math.sqrt(correctRadius((brushSize * last.w) / 100));
+      const rEnd = Math.sqrt(correctRadius((brushSize * endW) / 100));
+      const off0 = (rT - rEnd) * 0.45 * side;
       let ang = Math.atan2(stroke.dirY, stroke.dirX);
-      let ex = stroke.x, ey = stroke.y;
-      const extLen = rT * 1.2, steps = 14, ds = extLen / steps;
+      let ex = stroke.x - stroke.dirY * off0 / aspect, ey = stroke.y + stroke.dirX * off0;
+      const extLen = rT * (Math.abs(curv) > 0.8 ? 1.0 : 0.5);
+      const steps = 12, ds = extLen / steps;
       for (let i = 1; i <= steps; i++) {
         ang += curv * ds * 0.8;
         ex += Math.cos(ang) * ds / aspect;
         ey += Math.sin(ang) * ds;
-        const w = endW * Math.pow(1 - i / steps, 1.1);
+        const w = endW * Math.pow(1 - i / steps, 1.2);
         if (w < 0.004) break;
-        const rNow = Math.sqrt(correctRadius((brushSize * w) / 100));
-        const off = (rT - rNow) * 0.75 * side;
-        brushStamp(ex - Math.sin(ang) * off / aspect, ey + Math.cos(ang) * off,
-                   Math.cos(ang), Math.sin(ang), w, last.ink, stroke.seed);
+        brushStamp(ex, ey, Math.cos(ang), Math.sin(ang), w, last.ink, stroke.seed);
       }
     }
   }
