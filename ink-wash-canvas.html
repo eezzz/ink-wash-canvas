@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b21</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b22</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -731,36 +731,12 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark, layer) {
   gl.uniform1i(brushProgram.uniforms.uTarget, Lyr.read.attach(0));
   blit(Lyr.write); Lyr.swap();
 }
-// 尾段形态参数：预览与抬笔定形共用同一数学 → 收锋零跳变
-// fill=0 行笔中（笔尾收作锋尖）；fill→1 静止按住（顿笔洇圆）
-function tailParam(q, S, L, fill, side) {
-  const f = Math.max((S - q.s) / L, 0);
-  const wT = Math.max(q.w * Math.pow(f, 1.6), q.w * 0.03);
-  const w = wT + (q.w - wT) * fill;
-  const rFull = Math.sqrt(correctRadius((brushSize * q.w) / 100));
-  const rNow  = Math.sqrt(correctRadius((brushSize * w) / 100));
-  const off = (rFull - rNow) * 0.45 * side * (1 - fill);
-  return { w, off };
-}
-function tailSide() {
-  const curv = Math.max(-8, Math.min(8, stroke.curv));
-  return Math.abs(curv) > 0.8 ? -Math.sign(curv) * 0.6 : 0.3;
-}
-// 尾段实时预览：行笔时按原宽显示（收锋只在收笔时发生）
-function renderTailPreview() {
-  [previewLayer.read, previewLayer.write].forEach(clearFBOT);
-  if (!stroke) return;
-  if (!stroke.tailPts.length) {
-    // 落笔未动：顿笔洇出的圆点，随按住时间微涨
-    const g = 0.75 + 0.25 * Math.min((performance.now() - stroke.t0) / 300, 1);
-    brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW * g, stroke.ink, stroke.seed, undefined, previewLayer);
-    return;
-  }
-  for (const q of stroke.tailPts)
-    brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed, undefined, previewLayer);
-}
-// 收锋动画：抬笔瞬间墨随笔锋提起，160ms 内连续收细后定形
-let liftAnim = null;
+// —— 收笔物理（重构）——
+// 书法原理："出锋是笔行尽处，笔锋高提离纸，锋出笔画之外"；露锋收笔要"边走边提，
+// 运笔一次比一次轻，直到写出笔锋"。锋是继续行笔+逐渐提压【写】出来的，
+// 不是把已有笔迹改形。抬笔后模拟 ~150ms 提笔相：沿笔势与曲率继续行进，
+// 笔压连续衰减至零，途中照常落墨。速度慢→行程趋零→自然顿收圆头。无分支、无重渲染。
+let liftTail = null;
 function compositeStrokeLayer() {
   strokeCompositeProgram.bind();
   gl.uniform2f(strokeCompositeProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
@@ -771,51 +747,26 @@ function compositeStrokeLayer() {
   blit(dye.write); dye.swap();
   [strokeLayer.read, strokeLayer.write, previewLayer.read, previewLayer.write].forEach(clearFBOT);
 }
-function advanceLiftAnim(now) {
-  const a = liftAnim;
-  const t = Math.min((now - a.t0) / 160, 1);
-  const fill = 1 - t * (2 - t); // 缓出：1 → 0
+function advanceLiftTail(dt) {
+  const a = liftTail;
   const aspect = canvas.width / canvas.height;
-  [previewLayer.read, previewLayer.write].forEach(clearFBOT);
-  for (const q of a.pts) {
-    const tp = tailParam(q, a.S, a.L, fill, a.side);
-    brushStamp(q.x - q.dy * tp.off / aspect, q.y + q.dx * tp.off, q.dx, q.dy,
-               tp.w, q.ink, a.seed, undefined, previewLayer);
+  const T = 0.15; // 提笔相时长（秒）
+  while (dt > 0 && a.t < T) {
+    const sub = Math.min(0.004, T - a.t, dt);
+    dt -= sub; a.t += sub;
+    const k = 1 - a.t / T;
+    const v = a.v0 * Math.pow(k, 1.2);   // 行进渐止
+    const ds = v * sub;
+    a.ang += a.curv * ds * 0.8;          // 顺近段曲率写出弧锋
+    a.x += Math.cos(a.ang) * ds / aspect;
+    a.y += Math.sin(a.ang) * ds;
+    const w = a.W * Math.pow(k, 2.8);    // 笔压渐提（视觉≈1.4次收敛）
+    if (w < 0.01) { a.t = T; break; }
+    brushStamp(a.x, a.y, Math.cos(a.ang), Math.sin(a.ang), w, a.ink, a.seed);
   }
-  if (t < 1) return;
-  // 定形：最终收锋写入笔画层 + 甩尾细须，合入画纸
-  let endW = 0;
-  for (const q of a.pts) {
-    const tp = tailParam(q, a.S, a.L, 0, a.side);
-    endW = tp.w;
-    brushStamp(q.x - q.dy * tp.off / aspect, q.y + q.dx * tp.off, q.dx, q.dy, tp.w, q.ink, a.seed);
-  }
-  if (endW > 0.008) {
-    const last = a.pts[a.pts.length - 1];
-    const rT = Math.sqrt(correctRadius((brushSize * last.w) / 100));
-    const rEnd = Math.sqrt(correctRadius((brushSize * endW) / 100));
-    const off0 = (rT - rEnd) * 0.45 * a.side;
-    let ang = Math.atan2(a.dirY, a.dirX);
-    let ex = a.x - a.dirY * off0 / aspect, ey = a.y + a.dirX * off0;
-    const extLen = rT * (Math.abs(a.curv) > 0.8 ? 1.0 : 0.5);
-    const steps = 12, ds = extLen / steps;
-    for (let i = 1; i <= steps; i++) {
-      ang += a.curv * ds * 0.8;
-      ex += Math.cos(ang) * ds / aspect;
-      ey += Math.sin(ang) * ds;
-      const w = endW * Math.pow(1 - i / steps, 1.2);
-      if (w < 0.004) break;
-      brushStamp(ex, ey, Math.cos(ang), Math.sin(ang), w, last.ink, a.seed);
-    }
-  }
-  compositeStrokeLayer();
-  liftAnim = null;
+  if (a.t >= T) { compositeStrokeLayer(); liftTail = null; }
 }
-function finishLiftAnimNow() {
-  if (!liftAnim) return;
-  liftAnim.t0 = -1e9; // 立即推进到定形
-  advanceLiftAnim(performance.now());
-}
+function finishLiftNow() { if (liftTail) advanceLiftTail(10); }
 function startStroke(p, pressure) {
   stroke = {
     seed: Math.random() * 100,
@@ -824,11 +775,11 @@ function startStroke(p, pressure) {
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
     speed: 0.2, t: performance.now(), t0: performance.now(),
-    moved: false, travel: 0, rampLen: 0, tailPts: [], curv: 0
+    moved: false, travel: 0, rampLen: 0, curv: 0, dotW: 0
   };
-  // 正式落墨延迟（移动则露锋尖入，原地抬笔则顿笔成点），但预览层即时给出笔触反馈
-  [previewLayer.read, previewLayer.write].forEach(clearFBOT);
-  brushStamp(p.x, p.y, 1, 0, stroke.lastW * 0.9, stroke.ink, stroke.seed, undefined, previewLayer);
+  // 锋尖着纸：即刻落一小点；按住不动则由帧循环洇大（顿笔蓄墨）
+  stroke.dotW = stroke.lastW * 0.3;
+  brushStamp(p.x, p.y, 1, 0, stroke.dotW, stroke.ink, stroke.seed);
 }
 function strokeTo(p, pressure, t) {
   if (!stroke) return;
@@ -874,13 +825,7 @@ function strokeTo(p, pressure, t) {
     stroke.ink = Math.max(stroke.ink - (dist / steps) * deplete, 0.22);
     const ramp = stroke.rampLen > 0 ? Math.min(stroke.travel / stroke.rampLen, 1) : 1;
     const wi = (wStart + (wEnd - wStart) * tt) * Math.pow(0.25 + 0.75 * ramp, 2); // 露锋尖入（平方补偿视觉 sqrt）
-    stroke.tailPts.push({ x: sx, y: sy, dx: sdx, dy: sdy, w: wi, ink: stroke.ink, s: stroke.travel });
-  }
-  // 尾段缓冲：抬笔时才定形（收锋/顿收）。行笔越快缓冲越长——真实撇捺的收锋约占笔画后 1/3
-  const tailLen = Math.max(rUV * (2.2 + Math.min(stroke.speed, 1.6) * 2.5), 0.014);
-  while (stroke.tailPts.length && stroke.tailPts[0].s < stroke.travel - tailLen) {
-    const q = stroke.tailPts.shift();
-    brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed);
+    brushStamp(sx, sy, sdx, sdy, wi, stroke.ink, stroke.seed); // 即写即落墨，零延迟
   }
   stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
   stroke.x = p.x; stroke.y = p.y;
@@ -888,31 +833,19 @@ function strokeTo(p, pressure, t) {
 function endStroke() {
   if (!stroke) return;
   if (!stroke.moved) {
-    // 原地按下抬起 → 顿笔成点；按压不足 60ms 视为按键抖动，不落墨
-    if (performance.now() - stroke.t0 > 60) {
-      brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, stroke.ink, stroke.seed);
-    }
+    // 顿笔成点：着纸墨点已实时落纸（含按住洇大），直接定形
     compositeStrokeLayer(); stroke = null; return;
   }
-  if (stroke.travel < 0.008 && performance.now() - stroke.t0 < 100) {
-    dbg && dbg('END: micro-stroke discarded'); // 按键抖动幻影笔触
-    compositeStrokeLayer(); stroke = null; return;
-  }
-  const idle = performance.now() - stroke.t;
-  const fast = stroke.speed > 0.3 && idle < 120;
-  dbg && dbg(`END: ${fast ? 'TAPER-ANIM' : 'BLUNT'} spd=${stroke.speed.toFixed(2)} idle=${idle.toFixed(0)}ms curv=${stroke.curv.toFixed(1)}`);
-  if (!fast || !stroke.tailPts.length) {
-    // 顿收：缓冲尾段按原宽落墨，与行笔预览一致，无跳变
-    for (const q of stroke.tailPts) brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed);
-    compositeStrokeLayer(); stroke = null; return;
-  }
-  // 快提出锋：收笔瞬间启动收锋动画，墨随笔锋提起
-  liftAnim = {
-    pts: stroke.tailPts, S: stroke.travel,
-    L: Math.max(stroke.travel - stroke.tailPts[0].s, 1e-6),
-    side: tailSide(), curv: Math.max(-8, Math.min(8, stroke.curv)),
-    dirX: stroke.dirX, dirY: stroke.dirY, x: stroke.x, y: stroke.y,
-    seed: stroke.seed, t0: performance.now()
+  // 提笔相：以抬笔瞬间的笔势/笔宽/曲率启动"边走边提"的出锋物理
+  const idleMs = performance.now() - stroke.t;
+  const v0 = idleMs > 150 ? 0 : Math.min(stroke.speed, 1.6); // 停顿后抬笔 = 原地提锋（顿收）
+  dbg && dbg(`END: lift v0=${v0.toFixed(2)} w=${stroke.lastW.toFixed(2)} curv=${stroke.curv.toFixed(1)}`);
+  liftTail = {
+    x: stroke.x, y: stroke.y,
+    ang: Math.atan2(stroke.dirY, stroke.dirX),
+    v0, W: stroke.lastW,
+    curv: Math.max(-8, Math.min(8, stroke.curv)),
+    ink: stroke.ink, seed: stroke.seed, t: 0
   };
   stroke = null;
 }
@@ -941,7 +874,7 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button !== undefined && e.button !== 0) { dbg && dbg('down BLOCKED: btn ' + e.button); return; }
   if (isBrush() && performance.now() - lastUpT < 80) { dbg && dbg('down BLOCKED: debounce'); return; }
   dbg && dbg(`DOWN t=${performance.now().toFixed(0)} xy=${e.clientX},${e.clientY} p=${e.pressure} type=${e.pointerType}`);
-  finishLiftAnimNow(); // 上一笔收锋未完则立即定形
+  finishLiftNow(); // 上一笔提笔相未完则立即写完
   const p = toUV(e);
   pointerDown = true; lastX = p.x; lastY = p.y;
   pushUndo(); // 每个动作前留快照
@@ -1089,7 +1022,7 @@ function restoreFrom(s) {
    previewLayer.read, previewLayer.write].forEach(clearFBOT);
 }
 function undoOnce() {
-  finishLiftAnimNow();
+  finishLiftNow();
   if (!undoStack.length) return;
   const cur = allocSlot('redo');
   copyTo(cur, dye.read.texture);
@@ -1100,7 +1033,7 @@ function undoOnce() {
   updateHistoryButtons();
 }
 function redoOnce() {
-  finishLiftAnimNow();
+  finishLiftNow();
   if (!redoStack.length) return;
   const cur = allocSlot('undo');
   copyTo(cur, dye.read.texture);
@@ -1130,7 +1063,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'y') { e.preventDefault(); redoOnce(); }
 });
 document.getElementById('clear').addEventListener('click', () => {
-  finishLiftAnimNow();
+  finishLiftNow();
   pushUndo(); // 洗砚也可撤销
   clearCanvasOnly();
 });
@@ -1162,7 +1095,7 @@ function copyTo(targetFBO, sourceTexture) {
 
 // 存画：染料场缩放读出 → sqrt 编码为 PNG（低浓度精度更高）→ localStorage
 function saveState() {
-  finishLiftAnimNow();
+  finishLiftNow();
   try {
     const scale = Math.min(1, SAVE_MAX / Math.max(dye.width, dye.height));
     const w = Math.max(1, Math.round(dye.width * scale));
@@ -1241,7 +1174,7 @@ function loadState() {
 
 // 照片：当前画面（含宣纸质感）导出为 PNG
 function exportPhoto() {
-  finishLiftAnimNow();
+  finishLiftNow();
   render();
   canvas.toBlob(blob => {
     if (!blob) { showToast('导出失败'); return; }
@@ -1266,8 +1199,16 @@ function frame(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.0166);
   lastTime = now;
   if (!isBrush()) step(dt); // 毛笔模式：笔迹静止，不跑流体
-  else if (stroke) renderTailPreview(); // 行笔中：笔尾原宽预览
-  else if (liftAnim) advanceLiftAnim(now); // 收笔中：收锋动画
+  else if (stroke && !stroke.moved) {
+    // 顿笔蓄墨：按住不动，墨点缓涨
+    const g = Math.min((performance.now() - stroke.t0) / 600, 1);
+    const w = stroke.lastW * (0.3 + 0.7 * g);
+    if (w > stroke.dotW + 0.02) {
+      stroke.dotW = w;
+      brushStamp(stroke.x, stroke.y, 1, 0, w, stroke.ink, stroke.seed);
+    }
+  }
+  else if (liftTail) advanceLiftTail(dt); // 收笔中：边走边提写出锋
   render();
   requestAnimationFrame(frame);
 }
