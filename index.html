@@ -710,7 +710,7 @@ function strokeInkColor() { // 浓淡 → 墨色深浅
   return { r: ab.r * s, g: ab.g * s, b: ab.b * s };
 }
 function pressureW(pr) { const v = (pr && pr > 0) ? pr : 0.5; return 0.4 + 1.2 * v; }
-function brushStamp(x, y, dirx, diry, wScale, ink, seed) {
+function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark) {
   brushProgram.bind();
   gl.uniform2f(brushProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
   gl.uniform1f(brushProgram.uniforms.aspectRatio, canvas.width / canvas.height);
@@ -718,7 +718,8 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed) {
   gl.uniform1f(brushProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
   gl.uniform2f(brushProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(brushProgram.uniforms.inkLevel, ink);
-  gl.uniform1f(brushProgram.uniforms.darkness, 0.3 + 0.7 * ink); // 墨随行笔变淡
+  // dark 可单独指定：ink 控制笔毫聚散（飞白），dark 控制墨色深浅
+  gl.uniform1f(brushProgram.uniforms.darkness, dark !== undefined ? dark : 0.3 + 0.7 * ink);
   gl.uniform1f(brushProgram.uniforms.wetness, inkWater);
   gl.uniform1f(brushProgram.uniforms.seed, seed);
   gl.uniform1i(brushProgram.uniforms.uTarget, strokeLayer.read.attach(0));
@@ -782,20 +783,22 @@ function endStroke() {
   if (!stroke) return;
   const aspect = canvas.width / canvas.height;
   if (!stroke.moved) {
-    // 原地按下抬起 → 顿笔成点
-    brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed);
+    // 原地按下抬起 → 顿笔成点（聚毫但墨色如常）
+    brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
+               0.3 + 0.7 * stroke.ink);
   } else if (stroke.speed > 0.3) {
     // 运笔中快提 → 出锋收尖
     const rUV = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
     const len = rUV * 2.4;
     const steps = 20;
-    const solidInk = Math.max(stroke.ink, 0.75); // 笔尖聚拢，实心不分叉
+    const solidInk = Math.max(stroke.ink, 0.75);      // 仅聚拢笔毫，防飞白分叉
+    const tailDark = 0.3 + 0.7 * stroke.ink;          // 墨色与笔尾一致，不出现重墨锥形
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const sx = stroke.x + (stroke.dirX / aspect) * len * t;
       const sy = stroke.y + stroke.dirY * len * t;
       const w = Math.max(stroke.lastW * (1 - t) * (1 - t), 0.03);
-      brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed);
+      brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed, tailDark);
     }
   } // 慢停后抬笔 → 顿收圆头，不出锋
   // 笔画合入染料场，清空笔画层
