@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b18</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b19</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -724,8 +724,8 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark, layer) {
   gl.uniform1f(brushProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
   gl.uniform2f(brushProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(brushProgram.uniforms.inkLevel, ink);
-  // dark 可单独指定：ink 控制笔毫聚散（飞白），dark 控制墨色深浅
-  gl.uniform1f(brushProgram.uniforms.darkness, dark !== undefined ? dark : 0.3 + 0.7 * ink);
+  // dark 可单独指定：ink 控制笔毫聚散（飞白），dark 控制墨色深浅（参照真迹加浓）
+  gl.uniform1f(brushProgram.uniforms.darkness, dark !== undefined ? dark : 0.42 + 0.58 * ink);
   gl.uniform1f(brushProgram.uniforms.wetness, inkWater);
   gl.uniform1f(brushProgram.uniforms.seed, seed);
   gl.uniform1i(brushProgram.uniforms.uTarget, Lyr.read.attach(0));
@@ -781,8 +781,8 @@ function strokeTo(p, pressure, t) {
   const rUV = Math.sqrt(correctRadius((brushSize * wEnd) / 100));
   if (!stroke.moved) {
     stroke.moved = true;
-    // 起笔快 → 露锋长尖入；起笔慢 → 近乎藏锋
-    stroke.rampLen = rUV * (0.4 + 2.4 * Math.min(vNow, 1.2));
+    // 起笔快 → 露锋尖入；起笔慢 → 近乎藏锋。铺毫要快，起笔饱满有力
+    stroke.rampLen = rUV * (0.3 + 1.2 * Math.min(vNow, 1.2));
   }
   const spacing = Math.max(rUV * 0.12, 0.0004);
   const steps = Math.min(Math.ceil(dist / spacing), 200);
@@ -798,8 +798,8 @@ function strokeTo(p, pressure, t) {
     const wi = (wStart + (wEnd - wStart) * tt) * Math.pow(0.25 + 0.75 * ramp, 2); // 露锋尖入（平方补偿视觉 sqrt）
     stroke.tailPts.push({ x: sx, y: sy, dx: sdx, dy: sdy, w: wi, ink: stroke.ink, s: stroke.travel });
   }
-  // 尾段缓冲：最后一小段延迟落墨，抬笔时才决定如何收（沿真实轨迹收锋/圆头顿收）
-  const tailLen = Math.max(rUV * 2.6, 0.014); // 稍长的尾段缓冲，出锋更修长
+  // 尾段缓冲：抬笔时才定形（收锋/顿收）。行笔越快缓冲越长——真实撇捺的收锋约占笔画后 1/3
+  const tailLen = Math.max(rUV * (2.2 + Math.min(stroke.speed, 1.6) * 2.5), 0.014);
   while (stroke.tailPts.length && stroke.tailPts[0].s < stroke.travel - tailLen) {
     const q = stroke.tailPts.shift();
     brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed);
