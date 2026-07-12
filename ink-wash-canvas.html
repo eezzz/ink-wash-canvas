@@ -733,7 +733,7 @@ function startStroke(p, pressure) {
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
     speed: 0.2, t: performance.now(), t0: performance.now(),
-    moved: false, travel: 0, rampLen: 0, wHist: []
+    moved: false, travel: 0, rampLen: 0, tailPts: []
   };
   // 不立即落墨：移动则露锋尖入，原地抬笔则顿笔成点
 }
@@ -777,41 +777,43 @@ function strokeTo(p, pressure, t) {
     stroke.ink = Math.max(stroke.ink - (dist / steps) * deplete, 0.22);
     const ramp = stroke.rampLen > 0 ? Math.min(stroke.travel / stroke.rampLen, 1) : 1;
     const wi = (wStart + (wEnd - wStart) * tt) * (0.25 + 0.75 * ramp); // 露锋尖入
-    stroke.wHist.push({ t: stroke.travel, w: wi }); // 记录近段笔宽
-    brushStamp(sx, sy, sdx, sdy, wi, stroke.ink, stroke.seed);
+    stroke.tailPts.push({ x: sx, y: sy, dx: sdx, dy: sdy, w: wi, ink: stroke.ink, s: stroke.travel });
   }
-  const win = Math.max(rUV * 2.0, 0.012);
-  while (stroke.wHist.length && stroke.wHist[0].t < stroke.travel - win) stroke.wHist.shift();
+  // 尾段缓冲：最后一小段延迟落墨，抬笔时才决定如何收（沿真实轨迹收锋/圆头顿收）
+  const tailLen = Math.max(rUV * 2.2, 0.012);
+  while (stroke.tailPts.length && stroke.tailPts[0].s < stroke.travel - tailLen) {
+    const q = stroke.tailPts.shift();
+    brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed);
+  }
   stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
   stroke.x = p.x; stroke.y = p.y;
 }
 function endStroke() {
   if (!stroke) return;
-  const aspect = canvas.width / canvas.height;
   if (!stroke.moved) {
     // 原地按下抬起 → 顿笔成点；按压不足 60ms 视为按键抖动，不落墨
     if (performance.now() - stroke.t0 > 60) {
       brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
                  0.3 + 0.7 * stroke.ink);
     }
-  } else if (stroke.speed > 0.3 && performance.now() - stroke.t < 120) {
-    // 运笔中快提（未停顿）→ 出锋收尖：从近段最细处起收，绝不比笔尾粗
-    let tailW = stroke.lastW;
-    for (const h of stroke.wHist) tailW = Math.min(tailW, h.w);
-    const rUV = Math.sqrt(correctRadius((brushSize * tailW) / 100));
-    const len = rUV * 2.0;
-    const steps = 24;
-    const solidInk = Math.max(stroke.ink, 0.75);      // 仅聚拢笔毫，防飞白分叉
-    const tailDark = 0.3 + 0.7 * stroke.ink;          // 墨色与笔尾一致
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const w = tailW * (1 - t) * (1 - t);            // 无下限，真正收到尖
-      if (w < 0.02) break;
-      const sx = stroke.x + (stroke.dirX / aspect) * len * t;
-      const sy = stroke.y + stroke.dirY * len * t;
-      brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed, tailDark);
+  } else if (stroke.tailPts.length) {
+    // 落下缓冲的尾段：快提沿真实轨迹收锋出尖；慢停顿收圆头
+    const fast = stroke.speed > 0.3 && performance.now() - stroke.t < 120;
+    const pts = stroke.tailPts;
+    const S = stroke.travel;
+    const L = Math.max(S - pts[0].s, 1e-6);
+    for (const q of pts) {
+      if (fast) {
+        const f = Math.max((S - q.s) / L, 0);   // 距抬笔点越近越细，末端为零
+        const w = q.w * Math.pow(f, 1.15);      // 顺原路收锋，不向外投影
+        if (w < 0.015) continue;
+        brushStamp(q.x, q.y, q.dx, q.dy, w, Math.max(q.ink, 0.75), stroke.seed,
+                   0.3 + 0.7 * q.ink);          // 聚毫防分叉，墨色如常
+      } else {
+        brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed); // 顿收圆头
+      }
     }
-  } // 慢停后抬笔 → 顿收圆头，不出锋
+  }
   // 笔画合入染料场，清空笔画层
   strokeCompositeProgram.bind();
   gl.uniform2f(strokeCompositeProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
