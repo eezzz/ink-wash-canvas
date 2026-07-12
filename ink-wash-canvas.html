@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b35</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b36</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -113,6 +113,7 @@
     <span class="ctl">笔锋 <input type="range" id="brush" min="0.007" max="0.85" step="0.003" value="0.22"></span>
     <span class="ctl">浓淡 <input type="range" id="conc" min="0.05" max="1" step="0.01" value="0.85"></span>
     <span class="ctl">水分 <input type="range" id="water" min="0" max="1" step="0.01" value="0.35"></span>
+    <span class="ctl">粘稠 <input type="range" id="visc" min="0" max="1" step="0.01" value="0.7"></span>
     <span class="ctl">防抖 <input type="range" id="stab" min="0" max="0.9" step="0.01" value="0.45"></span>
   </div>
   <div class="row">
@@ -673,12 +674,12 @@ function step(dt) {
   gl.uniform1f(advectionProgram.uniforms.dt, dt);
   gl.uniform1f(advectionProgram.uniforms.velFloor, 0.0);
   // 油画：颜料黏稠，笔势即停不流动；水墨：水润流淌
-  gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 9.0 : config.VELOCITY_DISSIPATION); // 高黏稠：离笔即停
+  gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? (3.5 + 6.0 * oilVisc) : config.VELOCITY_DISSIPATION); // 粘稠→离笔即停，稀薄→略可流动
   blit(velocity.write); velocity.swap();
 
   gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
   gl.uniform1i(advectionProgram.uniforms.uSource, dye.read.attach(1));
-  gl.uniform1f(advectionProgram.uniforms.velFloor, isOil() ? 6.0 : 0.0); // 油彩静止即定形，不再被微流糊化
+  gl.uniform1f(advectionProgram.uniforms.velFloor, isOil() ? (2.5 + 4.5 * oilVisc) : 0.0); // 油彩静止即定形，不再被微流糊化
   gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 0.0 : config.DENSITY_DISSIPATION);
   blit(dye.write); dye.swap();
 }
@@ -739,7 +740,7 @@ function oilStamp(x, y, dirx, diry, wScale, amt) {
   gl.uniform1f(oilStampProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
   gl.uniform2f(oilStampProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(oilStampProgram.uniforms.seed, oilSeed);
-  gl.uniform1f(oilStampProgram.uniforms.cover, 0.25 + 0.6 * inkConc); // 最浓时近乎全遮盖
+  gl.uniform1f(oilStampProgram.uniforms.cover, 0.12 + 0.8 * oilVisc); // 粘稠→覆盖，稀薄→调和
   const c = hexToRGB(currentPigment.hex);
   gl.uniform4f(oilStampProgram.uniforms.color, c.r * amt, c.g * amt, c.b * amt, amt);
   gl.uniform1i(oilStampProgram.uniforms.uTarget, dye.read.attach(0));
@@ -768,8 +769,9 @@ function oilDragTo(x, y, dx, dy) {
     oilStamp(oilPrev.x + (x - oilPrev.x) * t, oilPrev.y + (y - oilPrev.y) * t, ddx, ddy, 1.0, amt);
   }
   oilPrev = { x, y, dx: ddx, dy: ddy };
-  // 推开已有湿颜料（涂抹混色，只注入流场不注色）
-  splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, { r: 0, g: 0, b: 0, a: 0 }, 1.0);
+  // 推开已有湿颜料（涂抹混色，只注入流场不注色）；稀料更易被推动调和
+  const f = OIL_FORCE * (1.6 - 0.8 * oilVisc);
+  splat(x, y, dx * f, dy * f, { r: 0, g: 0, b: 0, a: 0 }, 1.0);
 }
 function oilLift() {
   oilPrev = null; // 抬笔干净离纸，不再堆料（用户反馈：多余的一坨）
@@ -1051,10 +1053,11 @@ document.getElementById('brush').addEventListener('input', e => {
   brushSize = parseFloat(e.target.value);
 });
 // —— 调墨与手感 ——
-let inkConc = 0.85, inkWater = 0.35, stabAmt = 0.45;
+let inkConc = 0.85, inkWater = 0.35, stabAmt = 0.45, oilVisc = 0.7;
 document.getElementById('conc').addEventListener('input', e => { inkConc = parseFloat(e.target.value); });
 document.getElementById('water').addEventListener('input', e => { inkWater = parseFloat(e.target.value); });
 document.getElementById('stab').addEventListener('input', e => { stabAmt = parseFloat(e.target.value); });
+document.getElementById('visc').addEventListener('input', e => { oilVisc = parseFloat(e.target.value); });
 
 // —— 渲染介质 & 画笔 ——
 const BRUSH_OPTIONS = {
@@ -1381,6 +1384,11 @@ if (location.search.includes('selftest')) {
       await strokePath([[0.2, 0.45], ...P(26, t => [0.2 + 0.28 * t, 0.45, 9])], 60);
       currentPigment = PIGMENTS[0]; // 钛白：竖穿三色拖混提亮
       await strokePath([[0.34, 0.15], ...P(30, t => [0.34, 0.15 + 0.42 * t, 10])], 60);
+      // 低粘稠调和：稀料横穿白色竖笔应混色而非覆盖
+      oilVisc = 0.12;
+      currentPigment = PIGMENTS[2]; // 花青
+      await strokePath([[0.2, 0.56], ...P(26, t => [0.2 + 0.28 * t, 0.56, 9])], 60);
+      oilVisc = 0.7;
       currentPigment = PIGMENTS[7]; // 胭脂：厚涂点
       await strokePath([[0.58, 0.3], ...P(3, t => [0.58 + 0.008 * t, 0.3 + 0.006 * t, 20])], 300);
       currentPigment = PIGMENTS[1];
