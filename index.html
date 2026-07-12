@@ -732,7 +732,7 @@ function startStroke(p, pressure) {
     x: p.x, y: p.y, fx: p.x, fy: p.y,   // fx/fy：防抖平滑后的笔尖
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
-    speed: 0.2, t: performance.now(),
+    speed: 0.2, t: performance.now(), t0: performance.now(),
     moved: false, travel: 0, rampLen: 0
   };
   // 不立即落墨：移动则露锋尖入，原地抬笔则顿笔成点
@@ -785,9 +785,11 @@ function endStroke() {
   if (!stroke) return;
   const aspect = canvas.width / canvas.height;
   if (!stroke.moved) {
-    // 原地按下抬起 → 顿笔成点（聚毫但墨色如常）
-    brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
-               0.3 + 0.7 * stroke.ink);
+    // 原地按下抬起 → 顿笔成点；按压不足 60ms 视为按键抖动，不落墨
+    if (performance.now() - stroke.t0 > 60) {
+      brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
+                 0.3 + 0.7 * stroke.ink);
+    }
   } else if (stroke.speed > 0.3 && performance.now() - stroke.t < 120) {
     // 运笔中快提（未停顿）→ 出锋收尖
     const rUV = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
@@ -831,6 +833,8 @@ function toUV(e) {
   };
 }
 canvas.addEventListener('pointerdown', e => {
+  if (pointerDown) return;                      // 防重复 down
+  if (e.button !== undefined && e.button !== 0) return; // 仅左键/笔尖
   const p = toUV(e);
   pointerDown = true; lastX = p.x; lastY = p.y;
   pushUndo(); // 每个动作前留快照
