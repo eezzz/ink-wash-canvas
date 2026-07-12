@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b32</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b33</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -110,7 +110,7 @@
       <option value="oil">油画</option>
     </select></label>
     <label class="ctl">画笔 <select id="brushSel"></select></label>
-    <span class="ctl">笔锋 <input type="range" id="brush" min="0.06" max="0.85" step="0.01" value="0.22"></span>
+    <span class="ctl">笔锋 <input type="range" id="brush" min="0.007" max="0.85" step="0.003" value="0.22"></span>
     <span class="ctl">浓淡 <input type="range" id="conc" min="0.05" max="1" step="0.01" value="0.85"></span>
     <span class="ctl">水分 <input type="range" id="water" min="0" max="1" step="0.01" value="0.35"></span>
     <span class="ctl">防抖 <input type="range" id="stab" min="0" max="0.9" step="0.01" value="0.45"></span>
@@ -717,7 +717,7 @@ function oilPaint(hex, amt) { // 预乘颜色 + 厚度
 }
 const isOil = () => canvasMode === 'oil';
 const OIL_FORCE = 1800; // 黏稠颜料推挤力
-function inkAmt() { return 0.35 + 0.85 * inkConc; } // 浓淡 → 颜料量
+function inkAmt() { return 0.25 + 1.15 * inkConc; } // 浓淡 → 颜料量（范围拉大）
 
 // —— 油画笔：鬃毛条纹厚涂 + 湿料推挤 + 提笔堆脊 ——
 let oilSeed = 0, oilPrev = null;
@@ -801,7 +801,7 @@ const STROKE_ABSORB = 0.9;
 let stroke = null;
 function strokeInkColor() { // 浓淡 → 墨色深浅
   const ab = hexToAbsorb(currentPigment.hex);
-  const s = STROKE_ABSORB * (0.2 + 0.95 * inkConc); // 最浓档为实墨
+  const s = STROKE_ABSORB * (0.12 + 1.35 * inkConc); // 动态范围拉大：最淡清透，最浓实墨近黑
   return { r: ab.r * s, g: ab.g * s, b: ab.b * s };
 }
 function pressureW(pr) { const v = (pr && pr > 0) ? pr : 0.5; return 0.4 + 1.2 * v; }
@@ -1393,6 +1393,16 @@ if (location.search.includes('selftest')) {
     // 捺：细入渐按（减速）至捺脚，向右快出锋
     await strokePath([[0.56, 0.42], ...P(26, t => [0.56 + 0.13 * t, 0.42 + 0.31 * t, Math.round(5 + 11 * t)]),
                       ...P(6, t => [0.69 + 0.08 * t, 0.732 + 0.006 * t, 5])], 40);
+    // 浓淡三档对比 + 极细笔锋发丝线
+    inkConc = 1.0;
+    await strokePath([[0.74, 0.16], ...P(20, t => [0.74 + 0.15 * t, 0.16, 9])], 80);
+    inkConc = 0.5;
+    await strokePath([[0.74, 0.26], ...P(20, t => [0.74 + 0.15 * t, 0.26, 9])], 80);
+    inkConc = 0.12;
+    await strokePath([[0.74, 0.36], ...P(20, t => [0.74 + 0.15 * t, 0.36, 9])], 80);
+    inkConc = 0.85; brushSize = 0.007;
+    await strokePath([[0.74, 0.46], ...P(20, t => [0.74 + 0.15 * t, 0.46 + 0.02 * Math.sin(t * 6.3), 9])], 60);
+    brushSize = 0.22;
     document.title = 'SELFTEST-DONE';
   })();
 }
