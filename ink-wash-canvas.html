@@ -796,6 +796,8 @@ function endStroke() {
       brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
                  0.3 + 0.7 * stroke.ink);
     }
+  } else if (stroke.travel < 0.008 && performance.now() - stroke.t0 < 100) {
+    // 极短促的微笔画：鼠标按键抖动产生的幻影笔触，弃墨不上纸
   } else if (stroke.tailPts.length) {
     // 落下缓冲的尾段：快提沿真实轨迹收锋出尖；慢停顿收圆头
     const fast = stroke.speed > 0.3 && performance.now() - stroke.t < 120;
@@ -840,9 +842,11 @@ function toUV(e) {
     y: 1 - (e.clientY - rect.top) / rect.height
   };
 }
+let lastUpT = -1e9;
 canvas.addEventListener('pointerdown', e => {
   if (pointerDown) return;                      // 防重复 down
   if (e.button !== undefined && e.button !== 0) return; // 仅左键/笔尖
+  if (isBrush() && performance.now() - lastUpT < 80) return; // 抬笔 80ms 内的 down 视为按键抖动
   const p = toUV(e);
   pointerDown = true; lastX = p.x; lastY = p.y;
   pushUndo(); // 每个动作前留快照
@@ -872,7 +876,8 @@ canvas.addEventListener('pointermove', e => {
     lastX = p.x; lastY = p.y;
   }
 });
-window.addEventListener('pointerup', () => { pointerDown = false; endStroke(); });
+window.addEventListener('pointerup', () => { pointerDown = false; lastUpT = performance.now(); endStroke(); });
+window.addEventListener('pointercancel', () => { pointerDown = false; lastUpT = performance.now(); endStroke(); });
 
 // ---------- UI ----------
 const swatchBox = document.getElementById('swatches');
