@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b33</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b34</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -494,6 +494,9 @@ void main () {
     vec4 dyeS = texture(uDye, vUv);
     float amt = dyeS.a;
     vec3 paint = clamp(dyeS.rgb / max(amt, 1e-4), 0.0, 1.0);
+    // 油彩饱和：颜料在油介质中色度更足
+    float plum = dot(paint, vec3(0.299, 0.587, 0.114));
+    paint = clamp(mix(vec3(plum), paint, 1.3), 0.0, 1.0);
     float coverage = 1.0 - exp(-amt * 3.2);
     // 素净画布底：极淡的宽纹理，不干扰画面
     float nz = vnoise(px * 0.04);
@@ -510,9 +513,9 @@ void main () {
     vec3 n = normalize(vec3(-slope, 1.0));
     vec3 lightDir = normalize(vec3(-0.35, 0.45, 0.82));
     float diff = max(dot(n, lightDir), 0.0);
-    col *= 0.68 + 0.42 * diff;
+    col *= 0.55 + 0.5 * diff;   // 沟槽沉影，色彩层次加深
     vec3 hv = normalize(lightDir + vec3(0.0, 0.0, 1.0));
-    float spec = pow(max(dot(n, hv), 0.0), 32.0) * coverage * 0.8;
+    float spec = pow(max(dot(n, hv), 0.0), 48.0) * coverage * 0.35; // 高光收紧，不再泛白洗掉饱和度
     col += spec;
   }
   // 淡淡晕影
@@ -762,10 +765,7 @@ function oilDragTo(x, y, dx, dy) {
   splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, { r: 0, g: 0, b: 0, a: 0 }, 1.0);
 }
 function oilLift() {
-  if (!oilPrev) return;
-  // 提笔堆脊：笔离开处颜料堆起一道棱
-  oilStamp(oilPrev.x, oilPrev.y, oilPrev.dx, oilPrev.dy, 0.75, 0.22 + 0.4 * inkConc);
-  oilPrev = null;
+  oilPrev = null; // 抬笔干净离纸，不再堆料（用户反馈：多余的一坨）
 }
 
 // 点染：水墨 = 墨晕绽开；油画 = 不透明厚涂色块
