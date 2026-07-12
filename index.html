@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b13</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -793,14 +793,15 @@ function endStroke() {
   if (!stroke.moved) {
     // 原地按下抬起 → 顿笔成点；按压不足 60ms 视为按键抖动，不落墨
     if (performance.now() - stroke.t0 > 60) {
-      brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
-                 0.3 + 0.7 * stroke.ink);
+      brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, stroke.ink, stroke.seed);
     }
   } else if (stroke.travel < 0.008 && performance.now() - stroke.t0 < 100) {
     // 极短促的微笔画：鼠标按键抖动产生的幻影笔触，弃墨不上纸
+    dbg && dbg('END: micro-stroke discarded');
   } else if (stroke.tailPts.length) {
     // 落下缓冲的尾段：快提沿真实轨迹收锋出尖；慢停顿收圆头
     const fast = stroke.speed > 0.3 && performance.now() - stroke.t < 120;
+    dbg && dbg(`END: ${fast ? 'TAPER' : 'BLUNT'} spd=${stroke.speed.toFixed(2)} idle=${(performance.now() - stroke.t).toFixed(0)}ms tail=${stroke.tailPts.length} lastW=${stroke.lastW.toFixed(2)}`);
     const pts = stroke.tailPts;
     const S = stroke.travel;
     const L = Math.max(S - pts[0].s, 1e-6);
@@ -809,8 +810,8 @@ function endStroke() {
         const f = Math.max((S - q.s) / L, 0);   // 距抬笔点越近越细，末端为零
         const w = q.w * Math.pow(f, 1.15);      // 顺原路收锋，不向外投影
         if (w < 0.015) continue;
-        brushStamp(q.x, q.y, q.dx, q.dy, w, Math.max(q.ink, 0.75), stroke.seed,
-                   0.3 + 0.7 * q.ink);          // 聚毫防分叉，墨色如常
+        // 墨量原样传入：飞白吃掉的笔宽在收锋中保持一致，干笔收锋带枯意，不会变宽成箭头
+        brushStamp(q.x, q.y, q.dx, q.dy, w, q.ink, stroke.seed);
       } else {
         brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed); // 顿收圆头
       }
@@ -833,6 +834,14 @@ function endStroke() {
 }
 
 // ---------- Pointer ----------
+// 调试轨迹层：URL 加 ?debug 开启
+const dbg = location.search.includes('debug') ? (() => {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99;background:rgba(0,0,0,.78);color:#7f7;font:12px/1.5 monospace;padding:10px;border-radius:6px;max-width:480px;white-space:pre;pointer-events:none;';
+  document.body.appendChild(d);
+  const lines = [];
+  return m => { lines.push(m); if (lines.length > 20) lines.shift(); d.textContent = lines.join('\n'); };
+})() : null;
 const hint = document.getElementById('hint');
 let pointerDown = false, lastX = 0, lastY = 0, interacted = false;
 function toUV(e) {
@@ -844,9 +853,10 @@ function toUV(e) {
 }
 let lastUpT = -1e9;
 canvas.addEventListener('pointerdown', e => {
-  if (pointerDown) return;                      // 防重复 down
-  if (e.button !== undefined && e.button !== 0) return; // 仅左键/笔尖
-  if (isBrush() && performance.now() - lastUpT < 80) return; // 抬笔 80ms 内的 down 视为按键抖动
+  if (pointerDown) { dbg && dbg('down BLOCKED: dup'); return; }
+  if (e.button !== undefined && e.button !== 0) { dbg && dbg('down BLOCKED: btn ' + e.button); return; }
+  if (isBrush() && performance.now() - lastUpT < 80) { dbg && dbg('down BLOCKED: debounce'); return; }
+  dbg && dbg(`DOWN t=${performance.now().toFixed(0)} xy=${e.clientX},${e.clientY} p=${e.pressure} type=${e.pointerType}`);
   const p = toUV(e);
   pointerDown = true; lastX = p.x; lastY = p.y;
   pushUndo(); // 每个动作前留快照
@@ -876,8 +886,14 @@ canvas.addEventListener('pointermove', e => {
     lastX = p.x; lastY = p.y;
   }
 });
-window.addEventListener('pointerup', () => { pointerDown = false; lastUpT = performance.now(); endStroke(); });
-window.addEventListener('pointercancel', () => { pointerDown = false; lastUpT = performance.now(); endStroke(); });
+window.addEventListener('pointerup', e => {
+  dbg && dbg(`UP t=${performance.now().toFixed(0)} xy=${e.clientX},${e.clientY}`);
+  pointerDown = false; lastUpT = performance.now(); endStroke();
+});
+window.addEventListener('pointercancel', () => {
+  dbg && dbg('CANCEL');
+  pointerDown = false; lastUpT = performance.now(); endStroke();
+});
 
 // ---------- UI ----------
 const swatchBox = document.getElementById('swatches');
