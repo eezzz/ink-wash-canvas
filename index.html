@@ -750,10 +750,12 @@ function strokeTo(p, pressure, t) {
   // 运笔速度：快提则细而枯，慢按则粗而润
   stroke.speed = stroke.speed * 0.65 + vNow * 0.35;
   const speedFactor = Math.min(Math.max(1.2 - stroke.speed * 0.55, 0.3), 1.2);
-  // 弹性笔宽：提按有滞后回弹
+  // 弹性笔宽：变细快、变粗慢，且变粗需随行笔铺毫——杜绝减速停笔时鼓包
   const targetW = pressureW(pressure) * speedFactor;
   const wStart = stroke.lastW;
-  const wEnd = wStart + (targetW - wStart) * 0.28;
+  const grow = targetW > wStart;
+  const k = Math.min(1, dist * 50) * (grow ? 0.12 : 0.45);
+  const wEnd = wStart + (targetW - wStart) * k;
   // 笔势方向平滑
   let sdx = stroke.dirX * 0.5 + dx * 0.5, sdy = stroke.dirY * 0.5 + dy * 0.5;
   const sl = Math.hypot(sdx, sdy) || 1; sdx /= sl; sdy /= sl;
@@ -786,18 +788,19 @@ function endStroke() {
     // 原地按下抬起 → 顿笔成点（聚毫但墨色如常）
     brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed,
                0.3 + 0.7 * stroke.ink);
-  } else if (stroke.speed > 0.3) {
-    // 运笔中快提 → 出锋收尖
+  } else if (stroke.speed > 0.3 && performance.now() - stroke.t < 120) {
+    // 运笔中快提（未停顿）→ 出锋收尖
     const rUV = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
-    const len = rUV * 2.4;
-    const steps = 20;
+    const len = rUV * 2.0;
+    const steps = 24;
     const solidInk = Math.max(stroke.ink, 0.75);      // 仅聚拢笔毫，防飞白分叉
-    const tailDark = 0.3 + 0.7 * stroke.ink;          // 墨色与笔尾一致，不出现重墨锥形
+    const tailDark = 0.3 + 0.7 * stroke.ink;          // 墨色与笔尾一致
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
+      const w = stroke.lastW * (1 - t) * (1 - t);     // 无下限，真正收到尖
+      if (w < 0.02) break;
       const sx = stroke.x + (stroke.dirX / aspect) * len * t;
       const sy = stroke.y + stroke.dirY * len * t;
-      const w = Math.max(stroke.lastW * (1 - t) * (1 - t), 0.03);
       brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed, tailDark);
     }
   } // 慢停后抬笔 → 顿收圆头，不出锋
