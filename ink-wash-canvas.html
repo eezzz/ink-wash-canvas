@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b13</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b14</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -769,18 +769,19 @@ function strokeTo(p, pressure, t) {
   const spacing = Math.max(rUV * 0.12, 0.0004);
   const steps = Math.min(Math.ceil(dist / spacing), 200);
   const x0 = stroke.x, y0 = stroke.y;
-  const deplete = 1.7 - inkWater * 1.2; // 水分足耗墨慢
+  // 耗墨速度：水分足耗墨慢；墨越浓越耐画（行笔变淡慢），淡墨易褪
+  const deplete = (1.7 - inkWater * 1.2) * (1.5 - 1.05 * inkConc);
   for (let i = 1; i <= steps; i++) {
     const tt = i / steps;
     const sx = x0 + (p.x - x0) * tt, sy = y0 + (p.y - y0) * tt;
     stroke.travel += dist / steps;
     stroke.ink = Math.max(stroke.ink - (dist / steps) * deplete, 0.22);
     const ramp = stroke.rampLen > 0 ? Math.min(stroke.travel / stroke.rampLen, 1) : 1;
-    const wi = (wStart + (wEnd - wStart) * tt) * (0.25 + 0.75 * ramp); // 露锋尖入
+    const wi = (wStart + (wEnd - wStart) * tt) * Math.pow(0.25 + 0.75 * ramp, 2); // 露锋尖入（平方补偿视觉 sqrt）
     stroke.tailPts.push({ x: sx, y: sy, dx: sdx, dy: sdy, w: wi, ink: stroke.ink, s: stroke.travel });
   }
   // 尾段缓冲：最后一小段延迟落墨，抬笔时才决定如何收（沿真实轨迹收锋/圆头顿收）
-  const tailLen = Math.max(rUV * 2.2, 0.012);
+  const tailLen = Math.max(rUV * 2.6, 0.014); // 稍长的尾段缓冲，出锋更修长
   while (stroke.tailPts.length && stroke.tailPts[0].s < stroke.travel - tailLen) {
     const q = stroke.tailPts.shift();
     brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed);
@@ -808,8 +809,9 @@ function endStroke() {
     for (const q of pts) {
       if (fast) {
         const f = Math.max((S - q.s) / L, 0);   // 距抬笔点越近越细，末端为零
-        const w = q.w * Math.pow(f, 1.15);      // 顺原路收锋，不向外投影
-        if (w < 0.015) continue;
+        // 注意：视觉半径 ∝ sqrt(宽度参数)，参数上 3.6 次 = 视觉 1.8 次收敛 → 细长锐锋
+        const w = q.w * Math.pow(f, 3.6);
+        if (w < 0.01) continue;
         // 墨量原样传入：飞白吃掉的笔宽在收锋中保持一致，干笔收锋带枯意，不会变宽成箭头
         brushStamp(q.x, q.y, q.dx, q.dy, w, q.ink, stroke.seed);
       } else {
