@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b24</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b25</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -775,7 +775,8 @@ function startStroke(p, pressure) {
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
     speed: 0.2, t: performance.now(), t0: performance.now(),
-    moved: false, travel: 0, rampLen: 0, rampBase: 0.22, curv: 0, dotW: 0, headG: 0
+    moved: false, travel: 0, rampLen: 0, rampBase: 0.22, curv: 0, dotW: 0, headG: 0,
+    rawDx: 1, rawDy: 0
   };
   // 锋尖着纸：接触面从笔尖一点开始（真实毛笔尖先触纸）
   stroke.dotW = stroke.lastW * 0.22;
@@ -807,6 +808,9 @@ function strokeTo(p, pressure, t) {
   // 近段曲率（rad/uv）：决定出锋甩尾的弧度与锋尖贴边方向
   const crossT = stroke.dirX * sdy - stroke.dirY * sdx;
   stroke.curv = stroke.curv * 0.75 + (crossT / Math.max(dist, 1e-4)) * 0.25;
+  // 抬笔前的瞬时原始方向：收锋追踪（上挑锋上出，下按锋下出）
+  stroke.rawDx = stroke.rawDx * 0.35 + dx * 0.65;
+  stroke.rawDy = stroke.rawDy * 0.35 + dy * 0.65;
   const rUV = Math.sqrt(correctRadius((brushSize * wEnd) / 100));
   if (!stroke.moved) {
     stroke.moved = true;
@@ -842,10 +846,20 @@ function endStroke() {
   const idleMs = performance.now() - stroke.t;
   const v0 = idleMs > 150 ? 0 : Math.min(stroke.speed, 1.6); // 停顿后抬笔 = 原地提锋（顿收）
   const s = v0 / 1.6; // 归一化抬笔速度
-  dbg && dbg(`END: lift v0=${v0.toFixed(2)} w=${stroke.lastW.toFixed(2)} curv=${stroke.curv.toFixed(1)}`);
+  // 收锋坐标追踪：抬笔前手的瞬时走向 vs 笔画主方向 → 锋的出射角与贴边位置
+  const mainAng = Math.atan2(stroke.dirY, stroke.dirX);
+  let dAng = Math.atan2(stroke.rawDy, stroke.rawDx) - mainAng;
+  while (dAng > Math.PI) dAng -= 2 * Math.PI;
+  while (dAng < -Math.PI) dAng += 2 * Math.PI;
+  dAng = Math.max(-0.9, Math.min(0.9, dAng));
+  const tipBias = dAng / 0.9; // -1 下按 … 0 居中 … +1 上挑
+  const aspect2 = canvas.width / canvas.height;
+  const rW = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
+  dbg && dbg(`END: lift v0=${v0.toFixed(2)} w=${stroke.lastW.toFixed(2)} curv=${stroke.curv.toFixed(1)} bias=${tipBias.toFixed(2)}`);
   liftTail = {
-    x: stroke.x, y: stroke.y,
-    ang: Math.atan2(stroke.dirY, stroke.dirX),
+    x: stroke.x - Math.sin(mainAng) * (tipBias * rW * 0.4) / aspect2,
+    y: stroke.y + Math.cos(mainAng) * (tipBias * rW * 0.4),
+    ang: mainAng + dAng * 0.75,
     v0, W: stroke.lastW,
     T: 0.09 + 0.07 * s,       // 快提锋长，慢提锋短
     p: 2.2 + 1.6 * s,         // 快提细长针状，慢提丰圆短收
