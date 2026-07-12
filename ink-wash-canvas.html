@@ -26,14 +26,21 @@
   .hint.hide { opacity: 0; }
 
   .panel {
-    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 14px;
-    padding: 12px 20px; border-radius: 40px;
-    background: rgba(250, 247, 240, 0.72);
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 12px 22px; border-radius: 24px;
+    background: rgba(250, 247, 240, 0.78);
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     box-shadow: 0 6px 24px rgba(50, 45, 35, 0.18), inset 0 0 0 1px rgba(255,255,255,.5);
     font-family: "Kaiti SC", "KaiTi", "STKaiti", serif;
-    flex-wrap: wrap; justify-content: center; max-width: 94vw;
+    max-width: 94vw;
+  }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .ctl { display: flex; align-items: center; gap: 6px; font-size: 13px; letter-spacing: 2px; color: rgba(40,38,34,.65); white-space: nowrap; }
+  select {
+    font-family: inherit; font-size: 13px; letter-spacing: 1px;
+    padding: 4px 8px; border-radius: 10px; border: 1px solid rgba(40,38,34,.3);
+    background: rgba(255,255,255,.55); color: rgba(40,38,34,.8); outline: none; cursor: pointer;
   }
   .swatches { display: flex; gap: 10px; align-items: center; }
   .swatch {
@@ -53,9 +60,8 @@
 
   .divider { width: 1px; height: 26px; background: rgba(40,38,34,.15); }
 
-  .brush { display: flex; align-items: center; gap: 8px; color: rgba(40,38,34,.65); font-size: 13px; letter-spacing: 2px; }
   input[type="range"] {
-    -webkit-appearance: none; appearance: none; width: 90px; height: 3px; border-radius: 3px;
+    -webkit-appearance: none; appearance: none; width: 72px; height: 3px; border-radius: 3px;
     background: rgba(40,38,34,.25); outline: none; cursor: pointer;
   }
   input[type="range"]::-webkit-slider-thumb {
@@ -74,13 +80,7 @@
   }
   .btn:hover { background: rgba(40,38,34,.85); color: #f5f0e6; }
 
-  .seg { display: flex; border: 1px solid rgba(40,38,34,.3); border-radius: 20px; overflow: hidden; }
-  .seg button {
-    font-family: inherit; font-size: 12px; letter-spacing: 2px; cursor: pointer;
-    padding: 7px 12px; border: none; background: transparent;
-    color: rgba(40,38,34,.6); transition: all .18s;
-  }
-  .seg button.on { background: rgba(40,38,34,.85); color: #f5f0e6; }
+  .btn.disabled { opacity: .35; pointer-events: none; }
 
   .toast {
     position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
@@ -103,20 +103,27 @@
 <div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
-  <div class="swatches" id="swatches"></div>
-  <div class="divider"></div>
-  <div class="brush">笔锋 <input type="range" id="brush" min="0.06" max="0.85" step="0.01" value="0.22"></div>
-  <div class="seg" id="surface">
-    <button data-s="0">无纹</button>
-    <button data-s="1">宣纸</button>
-    <button data-s="2">油画</button>
-    <button data-s="3">毛笔</button>
+  <div class="row swatches" id="swatches"></div>
+  <div class="row">
+    <label class="ctl">渲染 <select id="canvasSel">
+      <option value="ink">水墨</option>
+      <option value="oil">油画</option>
+    </select></label>
+    <label class="ctl">画笔 <select id="brushSel"></select></label>
+    <span class="ctl">笔锋 <input type="range" id="brush" min="0.06" max="0.85" step="0.01" value="0.22"></span>
+    <span class="ctl">浓淡 <input type="range" id="conc" min="0.05" max="1" step="0.01" value="0.85"></span>
+    <span class="ctl">水分 <input type="range" id="water" min="0" max="1" step="0.01" value="0.35"></span>
+    <span class="ctl">防抖 <input type="range" id="stab" min="0" max="0.9" step="0.01" value="0.45"></span>
   </div>
-  <button class="btn" id="clear">洗 砚</button>
-  <div class="divider"></div>
-  <button class="btn" id="save">存 画</button>
-  <button class="btn" id="load">取 画</button>
-  <button class="btn" id="photo">照 片</button>
+  <div class="row">
+    <button class="btn" id="undoBtn">撤 销</button>
+    <button class="btn" id="redoBtn">重 做</button>
+    <button class="btn" id="clear">洗 砚</button>
+    <div class="divider"></div>
+    <button class="btn" id="save">存 画</button>
+    <button class="btn" id="load">取 画</button>
+    <button class="btn" id="photo">照 片</button>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 <div class="err" id="err">很抱歉，您的浏览器不支持 WebGL2 浮点渲染，无法运行水墨模拟。<br>请使用最新版 Chrome / Edge / Firefox / Safari。</div>
@@ -233,6 +240,7 @@ uniform float radius;
 uniform vec2 dir;
 uniform float inkLevel;
 uniform float darkness;
+uniform float wetness;
 uniform float seed;
 float hash (vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -249,8 +257,9 @@ void main () {
   vec2 p = vUv - point;
   p.x *= aspectRatio;
   float d = sqrt(dot(p, p) / radius);
-  // 实心笔头 + 窄柔边：边界干净利落
-  float core = 1.0 - smoothstep(0.82, 1.0, d);
+  // 实心笔头：水分多边缘润，水分少边缘利
+  float edge0 = mix(0.90, 0.72, wetness);
+  float core = 1.0 - smoothstep(edge0, 1.0, d);
   float r = sqrt(radius);
   vec2 perp = vec2(-dir.y, dir.x);
   float across = dot(p, perp) / r;
@@ -261,7 +270,9 @@ void main () {
   // 笔芯永远实心：飞白只出现在笔画两侧，不贯穿分叉
   float centerSolid = 1.0 - smoothstep(0.35, 0.75, abs(across));
   mask = max(mask, centerSolid);
-  float v = core * mask * darkness;
+  // 湿晕：水分沿笔画外圈洇出一圈淡痕
+  float halo = (1.0 - smoothstep(0.7, 1.5, d)) * wetness;
+  float v = max(core * mask, halo * 0.28) * darkness;
   float base = texture(uTarget, vUv).r;
   fragColor = vec4(max(base, v), 0.0, 0.0, 1.0);
 }`);
@@ -538,6 +549,7 @@ function initFramebuffers() {
   curl       = createFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
   pressure   = createDoubleFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
   strokeLayer = createDoubleFBO(dyeRes.width, dyeRes.height, gl.R16F, gl.RED, hf, gl.LINEAR); // 毛笔当前笔画层
+  initUndo(); // 撤销快照池随画布重建
 }
 
 function resizeCanvas() {
@@ -616,10 +628,10 @@ function render() {
   gl.uniform2f(displayProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
   gl.uniform1i(displayProgram.uniforms.uDye, dye.read.attach(0));
   gl.uniform1i(displayProgram.uniforms.uStroke, strokeLayer.read.attach(1));
-  const sAb = hexToAbsorb(currentPigment.hex);
-  gl.uniform3f(displayProgram.uniforms.uStrokeColor, sAb.r * STROKE_ABSORB, sAb.g * STROKE_ABSORB, sAb.b * STROKE_ABSORB);
+  const sAb = strokeInkColor();
+  gl.uniform3f(displayProgram.uniforms.uStrokeColor, sAb.r, sAb.g, sAb.b);
   gl.uniform1f(displayProgram.uniforms.uInkStrength, config.INK_STRENGTH);
-  gl.uniform1i(displayProgram.uniforms.uSurface, surfaceMode === 3 ? 1 : surfaceMode); // 毛笔用宣纸渲染
+  gl.uniform1i(displayProgram.uniforms.uSurface, isOil() ? 2 : 0);
   blit(null);
 }
 
@@ -652,45 +664,51 @@ function oilPaint(hex, amt) { // 预乘颜色 + 厚度
   const c = hexToRGB(hex);
   return { r: c.r * amt, g: c.g * amt, b: c.b * amt, a: amt };
 }
-const isOil = () => surfaceMode === 2;
+const isOil = () => canvasMode === 'oil';
 const OIL_FORCE = 2600;
+function inkAmt() { return 0.35 + 0.85 * inkConc; } // 浓淡 → 颜料量
 
 // 点染：水墨 = 墨晕绽开；油画 = 不透明厚涂色块
 function clickBloom(x, y, pigment) {
   if (isOil()) {
-    splat(x, y, 0, 0, oilPaint(pigment.hex, 0.9), 1.5);
+    splat(x, y, 0, 0, oilPaint(pigment.hex, 0.9 * inkAmt()), 1.5);
     for (let i = 0; i < 5; i++) {
       const ang = Math.random() * Math.PI * 2, rr = Math.random() * 0.006;
       splat(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr, 0, 0,
-        oilPaint(pigment.hex, 0.3 + Math.random() * 0.5), 0.4 + Math.random() * 0.6);
+        oilPaint(pigment.hex, (0.3 + Math.random() * 0.5) * inkAmt()), 0.4 + Math.random() * 0.6);
     }
     return;
   }
   const a = hexToAbsorb(pigment.hex);
-  splat(x, y, 0, 0, scaleAbsorb(a, 0.55), 1.4);
+  splat(x, y, 0, 0, scaleAbsorb(a, 0.55 * inkAmt()), 1.4 * (0.75 + inkWater * 0.5));
   const n = 14;
   for (let i = 0; i < n; i++) {
     const ang = (i / n) * Math.PI * 2 + Math.random() * 0.5;
-    const speed = 220 + Math.random() * 480;
+    const speed = (220 + Math.random() * 480) * (0.5 + inkWater); // 水多晕得远
     const dx = Math.cos(ang) * speed, dy = Math.sin(ang) * speed;
     const ox = Math.cos(ang) * 0.004, oy = Math.sin(ang) * 0.004;
-    splat(x + ox, y + oy, dx, dy, scaleAbsorb(a, 0.05 + Math.random() * 0.12), 0.3 + Math.random() * 0.5);
+    splat(x + ox, y + oy, dx, dy, scaleAbsorb(a, (0.05 + Math.random() * 0.12) * inkAmt()), 0.3 + Math.random() * 0.5);
   }
 }
 // 拖染：水墨 = 注墨随水流；油画 = 铺颜料 + 抹开已有颜料
 function dragSplat(x, y, dx, dy, pigment) {
   if (isOil()) {
-    splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, oilPaint(pigment.hex, 0.35), 1.0);
+    splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, oilPaint(pigment.hex, 0.35 * inkAmt()), 1.0);
     return;
   }
   const a = hexToAbsorb(pigment.hex);
-  splat(x, y, dx * config.SPLAT_FORCE, dy * config.SPLAT_FORCE, scaleAbsorb(a, 0.14), 1.0);
+  splat(x, y, dx * config.SPLAT_FORCE, dy * config.SPLAT_FORCE, scaleAbsorb(a, 0.14 * inkAmt()), 1.0);
 }
 
-// —— 毛笔：笔画式电子作画（笔画层 max 合成，边界干净、抬笔收锋） ——
-const isBrush = () => surfaceMode === 3;
-const STROKE_ABSORB = 0.85; // 单笔满墨的吸光度比例
+// —— 毛笔：笔画式电子作画（笔画层 max 合成 + 调墨/防抖/弹性/起收锋） ——
+const isBrush = () => canvasMode === 'ink' && brushTool === 'maobi';
+const STROKE_ABSORB = 0.9;
 let stroke = null;
+function strokeInkColor() { // 浓淡 → 墨色深浅
+  const ab = hexToAbsorb(currentPigment.hex);
+  const s = STROKE_ABSORB * (0.25 + 0.75 * inkConc);
+  return { r: ab.r * s, g: ab.g * s, b: ab.b * s };
+}
 function pressureW(pr) { const v = (pr && pr > 0) ? pr : 0.5; return 0.4 + 1.2 * v; }
 function brushStamp(x, y, dirx, diry, wScale, ink, seed) {
   brushProgram.bind();
@@ -701,14 +719,22 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed) {
   gl.uniform2f(brushProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(brushProgram.uniforms.inkLevel, ink);
   gl.uniform1f(brushProgram.uniforms.darkness, 0.3 + 0.7 * ink); // 墨随行笔变淡
+  gl.uniform1f(brushProgram.uniforms.wetness, inkWater);
   gl.uniform1f(brushProgram.uniforms.seed, seed);
   gl.uniform1i(brushProgram.uniforms.uTarget, strokeLayer.read.attach(0));
   blit(strokeLayer.write); strokeLayer.swap();
 }
 function startStroke(p, pressure) {
-  stroke = { seed: Math.random() * 100, ink: 1, x: p.x, y: p.y,
-             dirX: 1, dirY: 0, lastW: pressureW(pressure) * 0.85, speed: 0.2, t: performance.now() };
-  brushStamp(p.x, p.y, 1, 0, stroke.lastW, 1, stroke.seed); // 落笔
+  stroke = {
+    seed: Math.random() * 100,
+    ink: 0.55 + 0.45 * inkWater,        // 水分足则蓄墨多，枯笔早现飞白
+    x: p.x, y: p.y, fx: p.x, fy: p.y,   // fx/fy：防抖平滑后的笔尖
+    dirX: 1, dirY: 0,
+    lastW: pressureW(pressure) * 0.85,
+    speed: 0.2, t: performance.now(),
+    moved: false, travel: 0, rampLen: 0
+  };
+  // 不立即落墨：移动则露锋尖入，原地抬笔则顿笔成点
 }
 function strokeTo(p, pressure, t) {
   if (!stroke) return;
@@ -719,51 +745,66 @@ function strokeTo(p, pressure, t) {
   dx /= dist; dy /= dist;
   const dtMs = Math.max(t - stroke.t, 1);
   stroke.t = t;
+  const vNow = dist / dtMs * 1000;
   // 运笔速度：快提则细而枯，慢按则粗而润
-  stroke.speed = stroke.speed * 0.65 + (dist / dtMs * 1000) * 0.35;
+  stroke.speed = stroke.speed * 0.65 + vNow * 0.35;
   const speedFactor = Math.min(Math.max(1.2 - stroke.speed * 0.55, 0.3), 1.2);
-  // 笔宽平滑过渡，避免宽度跳变
+  // 弹性笔宽：提按有滞后回弹
   const targetW = pressureW(pressure) * speedFactor;
   const wStart = stroke.lastW;
-  const wEnd = wStart + (targetW - wStart) * 0.35;
-  // 笔势方向平滑，避免噪声纹理抖动
+  const wEnd = wStart + (targetW - wStart) * 0.28;
+  // 笔势方向平滑
   let sdx = stroke.dirX * 0.5 + dx * 0.5, sdy = stroke.dirY * 0.5 + dy * 0.5;
   const sl = Math.hypot(sdx, sdy) || 1; sdx /= sl; sdy /= sl;
   const rUV = Math.sqrt(correctRadius((brushSize * wEnd) / 100));
-  const spacing = Math.max(rUV * 0.12, 0.0004); // 密集盖印 → 轮廓平滑无颗粒
+  if (!stroke.moved) {
+    stroke.moved = true;
+    // 起笔快 → 露锋长尖入；起笔慢 → 近乎藏锋
+    stroke.rampLen = rUV * (0.4 + 2.4 * Math.min(vNow, 1.2));
+  }
+  const spacing = Math.max(rUV * 0.12, 0.0004);
   const steps = Math.min(Math.ceil(dist / spacing), 200);
   const x0 = stroke.x, y0 = stroke.y;
+  const deplete = 1.7 - inkWater * 1.2; // 水分足耗墨慢
   for (let i = 1; i <= steps; i++) {
     const tt = i / steps;
     const sx = x0 + (p.x - x0) * tt, sy = y0 + (p.y - y0) * tt;
-    stroke.ink = Math.max(stroke.ink - (dist / steps) * 1.1, 0.22); // 行笔耗墨
-    brushStamp(sx, sy, sdx, sdy, wStart + (wEnd - wStart) * tt, stroke.ink, stroke.seed);
+    stroke.travel += dist / steps;
+    stroke.ink = Math.max(stroke.ink - (dist / steps) * deplete, 0.22);
+    const ramp = stroke.rampLen > 0 ? Math.min(stroke.travel / stroke.rampLen, 1) : 1;
+    const wi = (wStart + (wEnd - wStart) * tt) * (0.25 + 0.75 * ramp); // 露锋尖入
+    brushStamp(sx, sy, sdx, sdy, wi, stroke.ink, stroke.seed);
   }
   stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
   stroke.x = p.x; stroke.y = p.y;
 }
 function endStroke() {
   if (!stroke) return;
-  // 收锋：顺笔势快速收细出尖，如提笔离纸
   const aspect = canvas.width / canvas.height;
-  const rUV = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
-  const len = rUV * 2.4;
-  const steps = 20; // 密集收锋，笔尖光滑
-  const solidInk = Math.max(stroke.ink, 0.75); // 收锋时笔尖聚拢，实心无飞白分叉
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    const sx = stroke.x + (stroke.dirX / aspect) * len * t;
-    const sy = stroke.y + stroke.dirY * len * t;
-    const w = Math.max(stroke.lastW * (1 - t) * (1 - t), 0.03); // 二次收细 → 尖锋
-    brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed);
-  }
+  if (!stroke.moved) {
+    // 原地按下抬起 → 顿笔成点
+    brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, Math.max(stroke.ink, 0.8), stroke.seed);
+  } else if (stroke.speed > 0.3) {
+    // 运笔中快提 → 出锋收尖
+    const rUV = Math.sqrt(correctRadius((brushSize * stroke.lastW) / 100));
+    const len = rUV * 2.4;
+    const steps = 20;
+    const solidInk = Math.max(stroke.ink, 0.75); // 笔尖聚拢，实心不分叉
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const sx = stroke.x + (stroke.dirX / aspect) * len * t;
+      const sy = stroke.y + stroke.dirY * len * t;
+      const w = Math.max(stroke.lastW * (1 - t) * (1 - t), 0.03);
+      brushStamp(sx, sy, stroke.dirX, stroke.dirY, w, solidInk, stroke.seed);
+    }
+  } // 慢停后抬笔 → 顿收圆头，不出锋
   // 笔画合入染料场，清空笔画层
   strokeCompositeProgram.bind();
   gl.uniform2f(strokeCompositeProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
   gl.uniform1i(strokeCompositeProgram.uniforms.uTarget, dye.read.attach(0));
   gl.uniform1i(strokeCompositeProgram.uniforms.uStroke, strokeLayer.read.attach(1));
-  const ab = hexToAbsorb(currentPigment.hex);
-  gl.uniform3f(strokeCompositeProgram.uniforms.sColor, ab.r * STROKE_ABSORB, ab.g * STROKE_ABSORB, ab.b * STROKE_ABSORB);
+  const c = strokeInkColor();
+  gl.uniform3f(strokeCompositeProgram.uniforms.sColor, c.r, c.g, c.b);
   blit(dye.write); dye.swap();
   [strokeLayer.read, strokeLayer.write].forEach(f => {
     gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
@@ -786,6 +827,7 @@ function toUV(e) {
 canvas.addEventListener('pointerdown', e => {
   const p = toUV(e);
   pointerDown = true; lastX = p.x; lastY = p.y;
+  pushUndo(); // 每个动作前留快照
   if (isBrush()) startStroke(p, e.pressure);
   else clickBloom(p.x, p.y, currentPigment);
   if (!interacted) { interacted = true; hint.classList.add('hide'); }
@@ -794,8 +836,15 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   if (!pointerDown) return;
   if (isBrush()) {
+    if (!stroke) return;
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for (const ev of evs) strokeTo(toUV(ev), ev.pressure, ev.timeStamp);
+    for (const ev of evs) {
+      const q = toUV(ev);
+      const k = 1 - stabAmt * 0.9; // 防抖：笔尖位置低通滤波
+      stroke.fx += (q.x - stroke.fx) * k;
+      stroke.fy += (q.y - stroke.fy) * k;
+      strokeTo({ x: stroke.fx, y: stroke.fy }, ev.pressure, ev.timeStamp);
+    }
     return;
   }
   const p = toUV(e);
@@ -825,36 +874,140 @@ PIGMENTS.forEach((pig, i) => {
 document.getElementById('brush').addEventListener('input', e => {
   brushSize = parseFloat(e.target.value);
 });
-// 画布材质：0 无纹理 / 1 宣纸 / 2 油画布
-let surfaceMode = parseInt(localStorage.getItem('inkwash_surface') || '0', 10);
-if (![0, 1, 2, 3].includes(surfaceMode)) surfaceMode = 0;
-const segBtns = document.querySelectorAll('#surface button');
-function applySurfaceUI(m) {
-  surfaceMode = m;
-  try { localStorage.setItem('inkwash_surface', String(m)); } catch (e) {}
-  segBtns.forEach(b => b.classList.toggle('on', parseInt(b.dataset.s, 10) === m));
+// —— 调墨与手感 ——
+let inkConc = 0.85, inkWater = 0.35, stabAmt = 0.45;
+document.getElementById('conc').addEventListener('input', e => { inkConc = parseFloat(e.target.value); });
+document.getElementById('water').addEventListener('input', e => { inkWater = parseFloat(e.target.value); });
+document.getElementById('stab').addEventListener('input', e => { stabAmt = parseFloat(e.target.value); });
+
+// —— 渲染介质 & 画笔 ——
+const BRUSH_OPTIONS = {
+  ink: [{ v: 'bloom', label: '晕染' }, { v: 'maobi', label: '水墨毛笔' }],
+  oil: [{ v: 'oilbrush', label: '油画笔' }]
+};
+let canvasMode = 'ink', brushTool = 'maobi';
+try {
+  const saved = JSON.parse(localStorage.getItem('inkwash_mode_v3') || '{}');
+  if (saved.c === 'oil' || saved.c === 'ink') canvasMode = saved.c;
+  if (typeof saved.b === 'string') brushTool = saved.b;
+} catch (e) {}
+const canvasSel = document.getElementById('canvasSel');
+const brushSel = document.getElementById('brushSel');
+function syncBrushOptions() {
+  const opts = BRUSH_OPTIONS[canvasMode];
+  brushSel.innerHTML = opts.map(o => `<option value="${o.v}">${o.label}</option>`).join('');
+  if (!opts.some(o => o.v === brushTool)) brushTool = opts[0].v;
+  brushSel.value = brushTool;
 }
-function setSurface(m) {
-  const mediumChanged = (surfaceMode === 2) !== (m === 2); // 水墨 ↔ 油画 属不同介质
-  applySurfaceUI(m);
-  if (mediumChanged) {
-    initFramebuffers(); // 换介质需换画布
-    showToast(m === 2 ? '已换油画布，重新起笔' : '已换水墨纸，重新起笔');
-  } else if (m === 3) {
-    showToast('毛笔模式：慢按笔粗墨润，快提笔细见飞白');
-  }
+function persistMode() {
+  try { localStorage.setItem('inkwash_mode_v3', JSON.stringify({ c: canvasMode, b: brushTool })); } catch (e) {}
 }
-segBtns.forEach(b => b.addEventListener('click', () => {
-  const m = parseInt(b.dataset.s, 10);
-  if (m !== surfaceMode) setSurface(m);
-}));
-applySurfaceUI(surfaceMode);
+function applyMedium(c, b) {
+  canvasMode = c;
+  if (b) brushTool = b;
+  canvasSel.value = canvasMode;
+  syncBrushOptions();
+  persistMode();
+}
+canvasSel.addEventListener('change', () => {
+  const c = canvasSel.value;
+  if (c === canvasMode) return;
+  applyMedium(c);
+  clearCanvasOnly(); // 换介质需换画布
+  resetHistory();
+  showToast(c === 'oil' ? '已换油画布，重新起笔' : '已换水墨纸，重新起笔');
+});
+brushSel.addEventListener('change', () => {
+  brushTool = brushSel.value;
+  persistMode();
+  if (brushTool === 'maobi') showToast('毛笔：慢按快提见浓淡，抬笔快出锋、停顿则顿收');
+});
+applyMedium(canvasMode, brushTool);
+
+// —— 撤销 / 重做（GPU 半分辨率快照池） ——
+const UNDO_SLOTS = 8;
+var undoPool, undoStack, redoStack;
+function initUndo() {
+  if (undoPool) [...undoPool, ...undoStack, ...redoStack].forEach(f => {
+    gl.deleteFramebuffer(f.fbo); gl.deleteTexture(f.texture);
+  });
+  undoPool = []; undoStack = []; redoStack = [];
+  const w = Math.max(dye.width >> 1, 1), h = Math.max(dye.height >> 1, 1);
+  for (let i = 0; i < UNDO_SLOTS; i++)
+    undoPool.push(createFBO(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR));
+  updateHistoryButtons();
+}
+function allocSlot(stealFirst) {
+  if (undoPool.length) return undoPool.pop();
+  const a = stealFirst === 'redo' ? redoStack : undoStack;
+  const b = stealFirst === 'redo' ? undoStack : redoStack;
+  return a.length ? a.shift() : b.shift(); // 挤掉最旧一步
+}
+function pushUndo() {
+  while (redoStack.length) undoPool.push(redoStack.pop());
+  const s = allocSlot('undo');
+  copyTo(s, dye.read.texture);
+  undoStack.push(s);
+  updateHistoryButtons();
+}
+function clearFBOT(f) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function clearCanvasOnly() {
+  [dye.read, dye.write, velocity.read, velocity.write, strokeLayer.read, strokeLayer.write].forEach(clearFBOT);
+}
+function restoreFrom(s) {
+  copyTo(dye.write, s.texture); dye.swap();
+  [velocity.read, velocity.write, strokeLayer.read, strokeLayer.write].forEach(clearFBOT);
+}
+function undoOnce() {
+  if (!undoStack.length) return;
+  const cur = allocSlot('redo');
+  copyTo(cur, dye.read.texture);
+  redoStack.push(cur);
+  const s = undoStack.pop();
+  restoreFrom(s);
+  undoPool.push(s);
+  updateHistoryButtons();
+}
+function redoOnce() {
+  if (!redoStack.length) return;
+  const cur = allocSlot('undo');
+  copyTo(cur, dye.read.texture);
+  undoStack.push(cur);
+  const s = redoStack.pop();
+  restoreFrom(s);
+  undoPool.push(s);
+  updateHistoryButtons();
+}
+function resetHistory() {
+  while (undoStack.length) undoPool.push(undoStack.pop());
+  while (redoStack.length) undoPool.push(redoStack.pop());
+  updateHistoryButtons();
+}
+function updateHistoryButtons() {
+  const ub = document.getElementById('undoBtn'), rb = document.getElementById('redoBtn');
+  if (!ub) return;
+  ub.classList.toggle('disabled', !undoStack || !undoStack.length);
+  rb.classList.toggle('disabled', !redoStack || !redoStack.length);
+}
+document.getElementById('undoBtn').addEventListener('click', undoOnce);
+document.getElementById('redoBtn').addEventListener('click', redoOnce);
+window.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z') { e.preventDefault(); if (e.shiftKey) redoOnce(); else undoOnce(); }
+  else if (k === 'y') { e.preventDefault(); redoOnce(); }
+});
 document.getElementById('clear').addEventListener('click', () => {
-  initFramebuffers();
+  pushUndo(); // 洗砚也可撤销
+  clearCanvasOnly();
 });
 
 // ---------- 存画 / 取画 / 照片 ----------
-const SAVE_KEY = 'inkwash_painting_v2';
+const SAVE_KEY = 'inkwash_painting_v3';
 const SAVE_MAX = 1600;   // 存画快照最长边
 const ABSORB_MAX = 6.0;  // 吸光度编码上限
 
@@ -908,7 +1061,7 @@ function saveState() {
       img.data[j] = av; img.data[j + 1] = av; img.data[j + 2] = av; img.data[j + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ w, h, mode: surfaceMode, png: c2d.toDataURL('image/png'), t: Date.now() }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ w, h, mode: { c: canvasMode, b: brushTool }, png: c2d.toDataURL('image/png'), t: Date.now() }));
     showToast('画已藏入砚匣');
   } catch (err) {
     showToast('存画失败：浏览器存储空间不足');
@@ -936,7 +1089,7 @@ function loadState() {
       floats[i * 4 + 2] = dec(img[i * 4 + 2]);
       floats[i * 4 + 3] = dec(img[(n + i) * 4]);
     }
-    if (typeof mode === 'number') applySurfaceUI(mode); // 恢复该画作的介质
+    if (mode && mode.c) applyMedium(mode.c, mode.b); // 恢复该画作的介质
     const tex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -945,7 +1098,8 @@ function loadState() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, floats);
-    initFramebuffers();
+    pushUndo(); // 取画前留快照
+    clearCanvasOnly();
     copyTo(dye.write, tex);
     dye.swap();
     gl.deleteTexture(tex);
@@ -985,8 +1139,8 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// 开卷一点淡墨
-clickBloom(0.5, 0.55, PIGMENTS[0]);
+// 开卷一点淡墨（晕染笔时）
+if (canvasMode === 'ink' && brushTool === 'bloom') clickBloom(0.5, 0.55, PIGMENTS[0]);
 requestAnimationFrame(frame);
 </script>
 </body>
