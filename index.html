@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b23</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b24</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -258,9 +258,9 @@ void main () {
   p.x *= aspectRatio;
   float d = sqrt(dot(p, p) / radius);
   float r = sqrt(radius);
-  // 实心笔头：水分多边缘润，水分少边缘利；柔边有绝对下限，锋尖小 stamp 依然有墨晕质感
+  // 实心笔头：水分多边缘润，水分少边缘利；柔边下限防锯齿但设上限——锋尖小 stamp 保持锐利
   float edge0 = mix(0.90, 0.72, wetness);
-  float band = max(1.0 - edge0, 0.0035 / max(r, 1e-4));
+  float band = max(1.0 - edge0, min(0.0015 / max(r, 1e-4), 0.30));
   float core = 1.0 - smoothstep(1.0 - band, 1.0, d);
   vec2 perp = vec2(-dir.y, dir.x);
   float across = dot(p, perp) / r;
@@ -761,7 +761,7 @@ function advanceLiftTail(dt) {
     a.x += Math.cos(a.ang) * ds / aspect;
     a.y += Math.sin(a.ang) * ds;
     const w = a.W * Math.pow(k, a.p);        // 收细速率随抬笔速度：快提针状、慢提丰圆
-    if (w < 0.01) { a.t = T; break; }
+    if (w < 0.0006) { a.t = T; break; }      // 锋写到 1~2 像素发丝才离纸
     brushStamp(a.x, a.y, Math.cos(a.ang), Math.sin(a.ang), w, a.ink, a.seed);
   }
   if (a.t >= T) { compositeStrokeLayer(); liftTail = null; }
@@ -848,7 +848,7 @@ function endStroke() {
     ang: Math.atan2(stroke.dirY, stroke.dirX),
     v0, W: stroke.lastW,
     T: 0.09 + 0.07 * s,       // 快提锋长，慢提锋短
-    p: 2.0 + 1.4 * s,         // 快提细长针状，慢提丰圆短收
+    p: 2.2 + 1.6 * s,         // 快提细长针状，慢提丰圆短收
     curv: Math.max(-8, Math.min(8, stroke.curv)),
     ink: stroke.ink, seed: stroke.seed, t: 0
   };
