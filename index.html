@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>æ°´å¢¨ Â· æµå½©</title>
+<title>水墨 · 流彩</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #efe9dc; }
@@ -100,39 +100,39 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>æ°´å¢¨æµå½©</h1><p>INK WASH CANVAS Â· b14</p></div>
-<div class="hint" id="hint">é€‰ è‰² Â· ç‚¹ æŸ“ Â· äº¤ èž</div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b16</p></div>
+<div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
   <div class="row">
-    <label class="ctl">æ¸²æŸ“ <select id="canvasSel">
-      <option value="ink">æ°´å¢¨</option>
-      <option value="oil">æ²¹ç”»</option>
+    <label class="ctl">渲染 <select id="canvasSel">
+      <option value="ink">水墨</option>
+      <option value="oil">油画</option>
     </select></label>
-    <label class="ctl">ç”»ç¬” <select id="brushSel"></select></label>
-    <span class="ctl">ç¬”é”‹ <input type="range" id="brush" min="0.06" max="0.85" step="0.01" value="0.22"></span>
-    <span class="ctl">æµ“æ·¡ <input type="range" id="conc" min="0.05" max="1" step="0.01" value="0.85"></span>
-    <span class="ctl">æ°´åˆ† <input type="range" id="water" min="0" max="1" step="0.01" value="0.35"></span>
-    <span class="ctl">é˜²æŠ– <input type="range" id="stab" min="0" max="0.9" step="0.01" value="0.45"></span>
+    <label class="ctl">画笔 <select id="brushSel"></select></label>
+    <span class="ctl">笔锋 <input type="range" id="brush" min="0.06" max="0.85" step="0.01" value="0.22"></span>
+    <span class="ctl">浓淡 <input type="range" id="conc" min="0.05" max="1" step="0.01" value="0.85"></span>
+    <span class="ctl">水分 <input type="range" id="water" min="0" max="1" step="0.01" value="0.35"></span>
+    <span class="ctl">防抖 <input type="range" id="stab" min="0" max="0.9" step="0.01" value="0.45"></span>
   </div>
   <div class="row">
-    <button class="btn" id="undoBtn">æ’¤ é”€</button>
-    <button class="btn" id="redoBtn">é‡ åš</button>
-    <button class="btn" id="clear">æ´— ç š</button>
+    <button class="btn" id="undoBtn">撤 销</button>
+    <button class="btn" id="redoBtn">重 做</button>
+    <button class="btn" id="clear">洗 砚</button>
     <div class="divider"></div>
-    <button class="btn" id="save">å­˜ ç”»</button>
-    <button class="btn" id="load">å– ç”»</button>
-    <button class="btn" id="photo">ç…§ ç‰‡</button>
+    <button class="btn" id="save">存 画</button>
+    <button class="btn" id="load">取 画</button>
+    <button class="btn" id="photo">照 片</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
-<div class="err" id="err">å¾ˆæŠ±æ­‰ï¼Œæ‚¨çš„æµè§ˆå™¨ä¸æ”¯æŒ WebGL2 æµ®ç‚¹æ¸²æŸ“ï¼Œæ— æ³•è¿è¡Œæ°´å¢¨æ¨¡æ‹Ÿã€‚<br>è¯·ä½¿ç”¨æœ€æ–°ç‰ˆ Chrome / Edge / Firefox / Safariã€‚</div>
+<div class="err" id="err">很抱歉，您的浏览器不支持 WebGL2 浮点渲染，无法运行水墨模拟。<br>请使用最新版 Chrome / Edge / Firefox / Safari。</div>
 
 <script>
 'use strict';
-// ============ æ°´å¢¨æµå½© Â· WebGL2 æµä½“æ¨¡æ‹Ÿ + é¢œæ–™å¸å…‰æ··è‰² (Beerâ€“Lambert) ============
-// æŠ€æœ¯è¦ç‚¹ï¼šStable Fluids (åŠæ‹‰æ ¼æœ—æ—¥å¹³æµ + Jacobi åŽ‹åŠ›æ±‚è§£ + æ¶¡é‡çº¦æŸ)ï¼Œ
-// æŸ“æ–™ä»¥ã€Œå¸å…‰åº¦ã€å­˜å‚¨ï¼Œæ˜¾ç¤ºæ—¶ paper * exp(-absorbance)ï¼Œé¢œè‰²å¦‚çœŸå®žé¢œæ–™èˆ¬å‡è‰²æ··åˆã€‚
+// ============ 水墨流彩 · WebGL2 流体模拟 + 颜料吸光混色 (Beer–Lambert) ============
+// 技术要点：Stable Fluids (半拉格朗日平流 + Jacobi 压力求解 + 涡量约束)，
+// 染料以「吸光度」存储，显示时 paper * exp(-absorbance)，颜色如真实颜料般减色混合。
 
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl2', { alpha: false, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: true });
@@ -143,33 +143,33 @@ if (!gl || !extCBF) {
 }
 
 const config = {
-  SIM_RESOLUTION: 512,   // æµåœºåˆ†è¾¨çŽ‡ï¼šè¶Šé«˜å¢¨ä¸è¶Šç»†è…»
-  DYE_RESOLUTION: 2560,  // æŸ“æ–™åˆ†è¾¨çŽ‡ï¼šå†³å®šå¢¨è¿¹è¾¹ç¼˜ç»†èŠ‚
-  DENSITY_DISSIPATION: 0.015, // å¢¨è‰²æžç¼“æ…¢è¤ªæ•£
-  VELOCITY_DISSIPATION: 0.55, // æ°´æµæ¸æ­¢
+  SIM_RESOLUTION: 512,   // 流场分辨率：越高墨丝越细腻
+  DYE_RESOLUTION: 2560,  // 染料分辨率：决定墨迹边缘细节
+  DENSITY_DISSIPATION: 0.015, // 墨色极缓慢褪散
+  VELOCITY_DISSIPATION: 0.55, // 水流渐止
   PRESSURE: 0.8,
   PRESSURE_ITERATIONS: 20,
-  CURL: 16,                   // æ¶¡é‡ â†’ å¢¨ä¸å›žæ—‹
+  CURL: 16,                   // 涡量 → 墨丝回旋
   SPLAT_FORCE: 5200,
-  INK_STRENGTH: 2.2           // æ˜¾è‰²æµ“åº¦
+  INK_STRENGTH: 2.2           // 显色浓度
 };
 
-// ---------- é¢œæ–™ï¼ˆå›½ç”»è‰²ï¼‰ ----------
+// ---------- 颜料（国画色） ----------
 const PIGMENTS = [
-  { name: 'å¢¨',   hex: '#17171b' },
-  { name: 'èŠ±é’', hex: '#1d5c77' },
-  { name: 'çŸ³é’', hex: '#2e5a9e' },
-  { name: 'çŸ³ç»¿', hex: '#3b806b' },
-  { name: 'è—¤é»„', hex: '#d9a521' },
-  { name: 'æœ±ç ‚', hex: '#c24c2e' },
-  { name: 'èƒ­è„‚', hex: '#9e2a47' },
-  { name: 'é’èŽ²', hex: '#6b4c93' },
-  { name: 'èµ­çŸ³', hex: '#96613d' }
+  { name: '墨',   hex: '#17171b' },
+  { name: '花青', hex: '#1d5c77' },
+  { name: '石青', hex: '#2e5a9e' },
+  { name: '石绿', hex: '#3b806b' },
+  { name: '藤黄', hex: '#d9a521' },
+  { name: '朱砂', hex: '#c24c2e' },
+  { name: '胭脂', hex: '#9e2a47' },
+  { name: '青莲', hex: '#6b4c93' },
+  { name: '赭石', hex: '#96613d' }
 ];
 function hexToAbsorb(hex) {
   const n = parseInt(hex.slice(1), 16);
   const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
-  return { r: 1 - r, g: 1 - g, b: 1 - b }; // å¸å…‰åº¦ = 1 - åå°„è‰²
+  return { r: 1 - r, g: 1 - g, b: 1 - b }; // 吸光度 = 1 - 反射色
 }
 let currentPigment = PIGMENTS[0];
 let brushSize = 0.22;
@@ -229,11 +229,11 @@ void main () {
   fragColor = base + splat;
 }`);
 
-// æ¯›ç¬”ç¬”è§¦ï¼šå†™å…¥ç‹¬ç«‹ç¬”ç”»å±‚ï¼ˆå•é€šé“ï¼Œå–æœ€å¤§åˆæˆ â†’ åŒç¬”ä¸å åŠ ã€è¾¹ç•Œå¹²å‡€ï¼‰
+// 毛笔笔触：写入独立笔画层（单通道，取最大合成 → 同笔不叠加、边界干净）
 const brushProgram = new Program(`#version 300 es
 precision highp float; precision highp sampler2D;
 in vec2 vUv; out vec4 fragColor;
-uniform sampler2D uTarget;   // ç¬”ç”»å±‚
+uniform sampler2D uTarget;   // 笔画层
 uniform float aspectRatio;
 uniform vec2 point;
 uniform float radius;
@@ -257,27 +257,27 @@ void main () {
   vec2 p = vUv - point;
   p.x *= aspectRatio;
   float d = sqrt(dot(p, p) / radius);
-  // å®žå¿ƒç¬”å¤´ï¼šæ°´åˆ†å¤šè¾¹ç¼˜æ¶¦ï¼Œæ°´åˆ†å°‘è¾¹ç¼˜åˆ©
+  // 实心笔头：水分多边缘润，水分少边缘利
   float edge0 = mix(0.90, 0.72, wetness);
   float core = 1.0 - smoothstep(edge0, 1.0, d);
   float r = sqrt(radius);
   vec2 perp = vec2(-dir.y, dir.x);
   float across = dot(p, perp) / r;
-  // é£žç™½ï¼šä»…å¢¨é‡åä½Žæ—¶å‡ºçŽ°å®½ç¬”æ¯«ç¼éš™ï¼Œä¸äº§ç”Ÿç»†ç¢Žæ¯›åˆº
+  // 飞白：仅墨量偏低时出现宽笔毫缝隙，不产生细碎毛刺
   float bristle = vnoise(vec2(across * 3.5 + seed, seed * 7.31));
-  float th = (1.0 - inkLevel) * 1.7 - 0.5; // å¢¨é‡ > 0.7 å®Œå…¨å®žå¿ƒ
+  float th = (1.0 - inkLevel) * 1.7 - 0.5; // 墨量 > 0.7 完全实心
   float mask = smoothstep(th, th + 0.35, bristle);
-  // ç¬”èŠ¯æ°¸è¿œå®žå¿ƒï¼šé£žç™½åªå‡ºçŽ°åœ¨ç¬”ç”»ä¸¤ä¾§ï¼Œä¸è´¯ç©¿åˆ†å‰
+  // 笔芯永远实心：飞白只出现在笔画两侧，不贯穿分叉
   float centerSolid = 1.0 - smoothstep(0.35, 0.75, abs(across));
   mask = max(mask, centerSolid);
-  // æ¹¿æ™•ï¼šæ°´åˆ†æ²¿ç¬”ç”»å¤–åœˆæ´‡å‡ºä¸€åœˆæ·¡ç—•
+  // 湿晕：水分沿笔画外圈洇出一圈淡痕
   float halo = (1.0 - smoothstep(0.7, 1.5, d)) * wetness;
   float v = max(core * mask, halo * 0.28) * darkness;
   float base = texture(uTarget, vUv).r;
   fragColor = vec4(max(base, v), 0.0, 0.0, 1.0);
 }`);
 
-// æŠ¬ç¬”æ—¶ï¼šç¬”ç”»å±‚æŒ‰é¢œè‰²åˆå…¥æŸ“æ–™åœº
+// 抬笔时：笔画层按颜色合入染料场
 const strokeCompositeProgram = new Program(`#version 300 es
 precision highp float; precision highp sampler2D;
 in vec2 vUv; out vec4 fragColor;
@@ -406,10 +406,10 @@ precision highp float; precision highp sampler2D;
 in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
 out vec4 fragColor;
 uniform sampler2D uDye;
-uniform sampler2D uStroke;    // æ¯›ç¬”å½“å‰ç¬”ç”»å±‚
-uniform vec3 uStrokeColor;    // å½“å‰ç¬”ç”»å¸å…‰åº¦
+uniform sampler2D uStroke;    // 毛笔当前笔画层
+uniform vec3 uStrokeColor;    // 当前笔画吸光度
 uniform float uInkStrength;
-uniform int uSurface; // 0 æ— çº¹ç† / 1 å®£çº¸ / 2 æ²¹ç”»å¸ƒ
+uniform int uSurface; // 0 无纹理 / 1 宣纸 / 2 油画布
 float hash (vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
   p += dot(p, p + 45.32);
@@ -428,11 +428,11 @@ void main () {
   vec2 px = gl_FragCoord.xy;
   vec3 col;
   if (uSurface == 0) {
-    // â€”â€” æ— çº¹ç†ï¼šç´ å‡€å¹³æ»‘ â€”â€”
+    // —— 无纹理：素净平滑 ——
     vec3 paper = vec3(0.958, 0.942, 0.905);
     col = paper * exp(-absorb * uInkStrength);
   } else if (uSurface == 1) {
-    // â€”â€” å®£çº¸ï¼šæ–‘é©³ + çº¤ç»´ + ç»†é¢—ç²’ï¼Œå¢¨éšçº¸æ€§å‘¼å¸ â€”â€”
+    // —— 宣纸：斑驳 + 纤维 + 细颗粒，墨随纸性呼吸 ——
     float mottle = vnoise(px * 0.012);
     float fiberH = vnoise(vec2(px.x * 0.02, px.y * 0.55));
     float fiberV = vnoise(vec2(px.x * 0.55, px.y * 0.02));
@@ -441,18 +441,18 @@ void main () {
     vec3 paper = mix(vec3(0.965, 0.945, 0.898), vec3(0.885, 0.855, 0.785), tex * 0.55);
     col = paper * exp(-absorb * uInkStrength * (0.92 + tex * 0.16));
   } else {
-    // â€”â€” æ²¹ç”»ï¼šé¢œæ–™åœºä¸º (é¢„ä¹˜é¢œè‰², åŽšåº¦)ï¼Œä¸é€æ˜Žè¦†ç›– + åŽšåº¦æµ®é›•å…‰ç…§ + æ²¹å…‰ â€”â€”
+    // —— 油画：颜料场为 (预乘颜色, 厚度)，不透明覆盖 + 厚度浮雕光照 + 油光 ——
     vec4 dyeS = texture(uDye, vUv);
     float amt = dyeS.a;
     vec3 paint = clamp(dyeS.rgb / max(amt, 1e-4), 0.0, 1.0);
     float coverage = 1.0 - exp(-amt * 2.4);
-    // ç´ å‡€ç”»å¸ƒåº•ï¼šæžæ·¡çš„å®½çº¹ç†ï¼Œä¸å¹²æ‰°ç”»é¢
+    // 素净画布底：极淡的宽纹理，不干扰画面
     float nz = vnoise(px * 0.04);
     float weave = vnoise(vec2(px.x * 0.11, px.y * 0.023)) * 0.5
                 + vnoise(vec2(px.x * 0.023, px.y * 0.11)) * 0.5;
     vec3 canvasCol = mix(vec3(0.936, 0.920, 0.886), vec3(0.905, 0.885, 0.845), weave * 0.5 + nz * 0.2);
     col = mix(canvasCol, paint, coverage);
-    // åŽšåº¦åœº â†’ æ³•çº¿ï¼šä»…é¢œæ–™å †å äº§ç”Ÿæµ®é›•ï¼Œç”»å¸ƒæœ¬èº«ä¿æŒå¹³æ•´
+    // 厚度场 → 法线：仅颜料堆叠产生浮雕，画布本身保持平整
     float hL = texture(uDye, vL).a;
     float hR = texture(uDye, vR).a;
     float hT = texture(uDye, vT).a;
@@ -466,7 +466,7 @@ void main () {
     float spec = pow(max(dot(n, hv), 0.0), 32.0) * coverage * 0.55;
     col += spec;
   }
-  // æ·¡æ·¡æ™•å½±
+  // 淡淡晕影
   float d = distance(vUv, vec2(0.5));
   col *= mix(1.0, 0.95, smoothstep(0.5, 0.9, d));
   fragColor = vec4(col, 1.0);
@@ -548,8 +548,8 @@ function initFramebuffers() {
   divergence = createFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
   curl       = createFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
   pressure   = createDoubleFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
-  strokeLayer = createDoubleFBO(dyeRes.width, dyeRes.height, gl.R16F, gl.RED, hf, gl.LINEAR); // æ¯›ç¬”å½“å‰ç¬”ç”»å±‚
-  initUndo(); // æ’¤é”€å¿«ç…§æ± éšç”»å¸ƒé‡å»º
+  strokeLayer = createDoubleFBO(dyeRes.width, dyeRes.height, gl.R16F, gl.RED, hf, gl.LINEAR); // 毛笔当前笔画层
+  initUndo(); // 撤销快照池随画布重建
 }
 
 function resizeCanvas() {
@@ -613,7 +613,7 @@ function step(dt) {
   gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
   gl.uniform1i(advectionProgram.uniforms.uSource, velocity.read.attach(0));
   gl.uniform1f(advectionProgram.uniforms.dt, dt);
-  // æ²¹ç”»ï¼šé¢œæ–™é»ç¨ ï¼Œç¬”åŠ¿å³åœä¸æµåŠ¨ï¼›æ°´å¢¨ï¼šæ°´æ¶¦æµæ·Œ
+  // 油画：颜料黏稠，笔势即停不流动；水墨：水润流淌
   gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 4.5 : config.VELOCITY_DISSIPATION);
   blit(velocity.write); velocity.swap();
 
@@ -660,15 +660,15 @@ function hexToRGB(hex) {
   const n = parseInt(hex.slice(1), 16);
   return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
 }
-function oilPaint(hex, amt) { // é¢„ä¹˜é¢œè‰² + åŽšåº¦
+function oilPaint(hex, amt) { // 预乘颜色 + 厚度
   const c = hexToRGB(hex);
   return { r: c.r * amt, g: c.g * amt, b: c.b * amt, a: amt };
 }
 const isOil = () => canvasMode === 'oil';
 const OIL_FORCE = 2600;
-function inkAmt() { return 0.35 + 0.85 * inkConc; } // æµ“æ·¡ â†’ é¢œæ–™é‡
+function inkAmt() { return 0.35 + 0.85 * inkConc; } // 浓淡 → 颜料量
 
-// ç‚¹æŸ“ï¼šæ°´å¢¨ = å¢¨æ™•ç»½å¼€ï¼›æ²¹ç”» = ä¸é€æ˜ŽåŽšæ¶‚è‰²å—
+// 点染：水墨 = 墨晕绽开；油画 = 不透明厚涂色块
 function clickBloom(x, y, pigment) {
   if (isOil()) {
     splat(x, y, 0, 0, oilPaint(pigment.hex, 0.9 * inkAmt()), 1.5);
@@ -684,13 +684,13 @@ function clickBloom(x, y, pigment) {
   const n = 14;
   for (let i = 0; i < n; i++) {
     const ang = (i / n) * Math.PI * 2 + Math.random() * 0.5;
-    const speed = (220 + Math.random() * 480) * (0.5 + inkWater); // æ°´å¤šæ™•å¾—è¿œ
+    const speed = (220 + Math.random() * 480) * (0.5 + inkWater); // 水多晕得远
     const dx = Math.cos(ang) * speed, dy = Math.sin(ang) * speed;
     const ox = Math.cos(ang) * 0.004, oy = Math.sin(ang) * 0.004;
     splat(x + ox, y + oy, dx, dy, scaleAbsorb(a, (0.05 + Math.random() * 0.12) * inkAmt()), 0.3 + Math.random() * 0.5);
   }
 }
-// æ‹–æŸ“ï¼šæ°´å¢¨ = æ³¨å¢¨éšæ°´æµï¼›æ²¹ç”» = é“ºé¢œæ–™ + æŠ¹å¼€å·²æœ‰é¢œæ–™
+// 拖染：水墨 = 注墨随水流；油画 = 铺颜料 + 抹开已有颜料
 function dragSplat(x, y, dx, dy, pigment) {
   if (isOil()) {
     splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, oilPaint(pigment.hex, 0.35 * inkAmt()), 1.0);
@@ -700,11 +700,11 @@ function dragSplat(x, y, dx, dy, pigment) {
   splat(x, y, dx * config.SPLAT_FORCE, dy * config.SPLAT_FORCE, scaleAbsorb(a, 0.14 * inkAmt()), 1.0);
 }
 
-// â€”â€” æ¯›ç¬”ï¼šç¬”ç”»å¼ç”µå­ä½œç”»ï¼ˆç¬”ç”»å±‚ max åˆæˆ + è°ƒå¢¨/é˜²æŠ–/å¼¹æ€§/èµ·æ”¶é”‹ï¼‰ â€”â€”
+// —— 毛笔：笔画式电子作画（笔画层 max 合成 + 调墨/防抖/弹性/起收锋） ——
 const isBrush = () => canvasMode === 'ink' && brushTool === 'maobi';
 const STROKE_ABSORB = 0.9;
 let stroke = null;
-function strokeInkColor() { // æµ“æ·¡ â†’ å¢¨è‰²æ·±æµ…
+function strokeInkColor() { // 浓淡 → 墨色深浅
   const ab = hexToAbsorb(currentPigment.hex);
   const s = STROKE_ABSORB * (0.25 + 0.75 * inkConc);
   return { r: ab.r * s, g: ab.g * s, b: ab.b * s };
@@ -718,7 +718,7 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark) {
   gl.uniform1f(brushProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
   gl.uniform2f(brushProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(brushProgram.uniforms.inkLevel, ink);
-  // dark å¯å•ç‹¬æŒ‡å®šï¼šink æŽ§åˆ¶ç¬”æ¯«èšæ•£ï¼ˆé£žç™½ï¼‰ï¼Œdark æŽ§åˆ¶å¢¨è‰²æ·±æµ…
+  // dark 可单独指定：ink 控制笔毫聚散（飞白），dark 控制墨色深浅
   gl.uniform1f(brushProgram.uniforms.darkness, dark !== undefined ? dark : 0.3 + 0.7 * ink);
   gl.uniform1f(brushProgram.uniforms.wetness, inkWater);
   gl.uniform1f(brushProgram.uniforms.seed, seed);
@@ -728,14 +728,14 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark) {
 function startStroke(p, pressure) {
   stroke = {
     seed: Math.random() * 100,
-    ink: 0.55 + 0.45 * inkWater,        // æ°´åˆ†è¶³åˆ™è“„å¢¨å¤šï¼Œæž¯ç¬”æ—©çŽ°é£žç™½
-    x: p.x, y: p.y, fx: p.x, fy: p.y,   // fx/fyï¼šé˜²æŠ–å¹³æ»‘åŽçš„ç¬”å°–
+    ink: 0.55 + 0.45 * inkWater,        // 水分足则蓄墨多，枯笔早现飞白
+    x: p.x, y: p.y, fx: p.x, fy: p.y,   // fx/fy：防抖平滑后的笔尖
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
     speed: 0.2, t: performance.now(), t0: performance.now(),
     moved: false, travel: 0, rampLen: 0, tailPts: [], curv: 0
   };
-  // ä¸ç«‹å³è½å¢¨ï¼šç§»åŠ¨åˆ™éœ²é”‹å°–å…¥ï¼ŒåŽŸåœ°æŠ¬ç¬”åˆ™é¡¿ç¬”æˆç‚¹
+  // 不立即落墨：移动则露锋尖入，原地抬笔则顿笔成点
 }
 function strokeTo(p, pressure, t) {
   if (!stroke) return;
@@ -747,32 +747,32 @@ function strokeTo(p, pressure, t) {
   const dtMs = Math.max(t - stroke.t, 1);
   stroke.t = t;
   const vNow = dist / dtMs * 1000;
-  // é€Ÿåº¦åŒ…ç»œä¸å¯¹ç§°ï¼šåŠ é€Ÿå¿«è·Ÿéšï¼ˆç«‹å³å˜ç»†ï¼‰ï¼Œå‡é€Ÿæ…¢è·Ÿéšï¼ˆæ”¶ç¬”å‡é€Ÿä¸é¼“ç²—ï¼‰
+  // 速度包络不对称：加速快跟随（立即变细），减速慢跟随（收笔减速不鼓粗）
   const acc = vNow > stroke.speed ? 0.45 : 0.12;
   stroke.speed = stroke.speed * (1 - acc) + vNow * acc;
   const speedFactor = Math.min(Math.max(1.2 - stroke.speed * 0.55, 0.3), 1.2);
-  // å¼¹æ€§ç¬”å®½ï¼šå˜ç»†å¿«ã€å˜ç²—æ…¢ï¼Œä¸”å˜ç²—éœ€éšè¡Œç¬”é“ºæ¯«â€”â€”æœç»å‡é€Ÿåœç¬”æ—¶é¼“åŒ…
+  // 弹性笔宽：变细快、变粗慢，且变粗需随行笔铺毫——杜绝减速停笔时鼓包
   const targetW = pressureW(pressure) * speedFactor;
   const wStart = stroke.lastW;
   const grow = targetW > wStart;
   const k = Math.min(1, dist * 50) * (grow ? 0.06 : 0.5);
   const wEnd = wStart + (targetW - wStart) * k;
-  // ç¬”åŠ¿æ–¹å‘å¹³æ»‘
+  // 笔势方向平滑
   let sdx = stroke.dirX * 0.5 + dx * 0.5, sdy = stroke.dirY * 0.5 + dy * 0.5;
   const sl = Math.hypot(sdx, sdy) || 1; sdx /= sl; sdy /= sl;
-  // è¿‘æ®µæ›²çŽ‡ï¼ˆrad/uvï¼‰ï¼šå†³å®šå‡ºé”‹ç”©å°¾çš„å¼§åº¦ä¸Žé”‹å°–è´´è¾¹æ–¹å‘
+  // 近段曲率（rad/uv）：决定出锋甩尾的弧度与锋尖贴边方向
   const crossT = stroke.dirX * sdy - stroke.dirY * sdx;
   stroke.curv = stroke.curv * 0.75 + (crossT / Math.max(dist, 1e-4)) * 0.25;
   const rUV = Math.sqrt(correctRadius((brushSize * wEnd) / 100));
   if (!stroke.moved) {
     stroke.moved = true;
-    // èµ·ç¬”å¿« â†’ éœ²é”‹é•¿å°–å…¥ï¼›èµ·ç¬”æ…¢ â†’ è¿‘ä¹Žè—é”‹
+    // 起笔快 → 露锋长尖入；起笔慢 → 近乎藏锋
     stroke.rampLen = rUV * (0.4 + 2.4 * Math.min(vNow, 1.2));
   }
   const spacing = Math.max(rUV * 0.12, 0.0004);
   const steps = Math.min(Math.ceil(dist / spacing), 200);
   const x0 = stroke.x, y0 = stroke.y;
-  // è€—å¢¨é€Ÿåº¦ï¼šæ°´åˆ†è¶³è€—å¢¨æ…¢ï¼›å¢¨è¶Šæµ“è¶Šè€ç”»ï¼ˆè¡Œç¬”å˜æ·¡æ…¢ï¼‰ï¼Œæ·¡å¢¨æ˜“è¤ª
+  // 耗墨速度：水分足耗墨慢；墨越浓越耐画（行笔变淡慢），淡墨易褪
   const deplete = (1.7 - inkWater * 1.2) * (1.5 - 1.05 * inkConc);
   for (let i = 1; i <= steps; i++) {
     const tt = i / steps;
@@ -780,11 +780,11 @@ function strokeTo(p, pressure, t) {
     stroke.travel += dist / steps;
     stroke.ink = Math.max(stroke.ink - (dist / steps) * deplete, 0.22);
     const ramp = stroke.rampLen > 0 ? Math.min(stroke.travel / stroke.rampLen, 1) : 1;
-    const wi = (wStart + (wEnd - wStart) * tt) * Math.pow(0.25 + 0.75 * ramp, 2); // éœ²é”‹å°–å…¥ï¼ˆå¹³æ–¹è¡¥å¿è§†è§‰ sqrtï¼‰
+    const wi = (wStart + (wEnd - wStart) * tt) * Math.pow(0.25 + 0.75 * ramp, 2); // 露锋尖入（平方补偿视觉 sqrt）
     stroke.tailPts.push({ x: sx, y: sy, dx: sdx, dy: sdy, w: wi, ink: stroke.ink, s: stroke.travel });
   }
-  // å°¾æ®µç¼“å†²ï¼šæœ€åŽä¸€å°æ®µå»¶è¿Ÿè½å¢¨ï¼ŒæŠ¬ç¬”æ—¶æ‰å†³å®šå¦‚ä½•æ”¶ï¼ˆæ²¿çœŸå®žè½¨è¿¹æ”¶é”‹/åœ†å¤´é¡¿æ”¶ï¼‰
-  const tailLen = Math.max(rUV * 2.6, 0.014); // ç¨é•¿çš„å°¾æ®µç¼“å†²ï¼Œå‡ºé”‹æ›´ä¿®é•¿
+  // 尾段缓冲：最后一小段延迟落墨，抬笔时才决定如何收（沿真实轨迹收锋/圆头顿收）
+  const tailLen = Math.max(rUV * 2.6, 0.014); // 稍长的尾段缓冲，出锋更修长
   while (stroke.tailPts.length && stroke.tailPts[0].s < stroke.travel - tailLen) {
     const q = stroke.tailPts.shift();
     brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed);
@@ -795,41 +795,41 @@ function strokeTo(p, pressure, t) {
 function endStroke() {
   if (!stroke) return;
   if (!stroke.moved) {
-    // åŽŸåœ°æŒ‰ä¸‹æŠ¬èµ· â†’ é¡¿ç¬”æˆç‚¹ï¼›æŒ‰åŽ‹ä¸è¶³ 60ms è§†ä¸ºæŒ‰é”®æŠ–åŠ¨ï¼Œä¸è½å¢¨
+    // 原地按下抬起 → 顿笔成点；按压不足 60ms 视为按键抖动，不落墨
     if (performance.now() - stroke.t0 > 60) {
       brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW, stroke.ink, stroke.seed);
     }
   } else if (stroke.travel < 0.008 && performance.now() - stroke.t0 < 100) {
-    // æžçŸ­ä¿ƒçš„å¾®ç¬”ç”»ï¼šé¼ æ ‡æŒ‰é”®æŠ–åŠ¨äº§ç”Ÿçš„å¹»å½±ç¬”è§¦ï¼Œå¼ƒå¢¨ä¸ä¸Šçº¸
+    // 极短促的微笔画：鼠标按键抖动产生的幻影笔触，弃墨不上纸
     dbg && dbg('END: micro-stroke discarded');
   } else if (stroke.tailPts.length) {
-    // è½ä¸‹ç¼“å†²çš„å°¾æ®µï¼šå¿«ææŒ‰æ¯›ç¬”å½¢æ€æ”¶é”‹ï¼›æ…¢åœé¡¿æ”¶åœ†å¤´
+    // 落下缓冲的尾段：快提按毛笔形态收锋；慢停顿收圆头
     const fast = stroke.speed > 0.3 && performance.now() - stroke.t < 120;
     dbg && dbg(`END: ${fast ? 'TAPER' : 'BLUNT'} spd=${stroke.speed.toFixed(2)} idle=${(performance.now() - stroke.t).toFixed(0)}ms tail=${stroke.tailPts.length} curv=${stroke.curv.toFixed(1)}`);
     const pts = stroke.tailPts;
     const S = stroke.travel;
     const L = Math.max(S - pts[0].s, 1e-6);
     const aspect = canvas.width / canvas.height;
-    // æ¯›ç¬”å½¢æ€ï¼šé”‹å°–è´´ç¬”ç”»ä¸€ä¾§è¾¹ç¼˜æ”¶æ‹¢ï¼ˆå¼§çº¿å–å†…ä¾§ï¼Œç›´çº¿å¾®åä¸€ä¾§ï¼‰ï¼Œéžå¯¹ç§°åœ†é”¥
+    // 毛笔形态：锋尖贴笔画一侧边缘收拢（弧线取内侧，直线微偏一侧），非对称圆锥
     const curv = Math.max(-8, Math.min(8, stroke.curv));
     const side = Math.abs(curv) > 0.8 ? -Math.sign(curv) : 0.6;
     let endW = 0;
     for (const q of pts) {
       if (fast) {
         const f = Math.max((S - q.s) / L, 0);
-        // å†…å‡¹æ”¶æ•›ï¼ˆè§†è§‰â‰ˆ1.4æ¬¡ï¼‰ï¼Œä¿ç•™ç»†å¢¨å¸¦äº¤ç»™ç”©å°¾æ”¶å°½
+        // 内凹收敛（视觉≈1.4次），保留细墨带交给甩尾收尽
         const w = Math.max(q.w * Math.pow(f, 2.8), q.w * 0.09);
         endW = w;
         const rFull = Math.sqrt(correctRadius((brushSize * q.w) / 100));
         const rNow  = Math.sqrt(correctRadius((brushSize * w) / 100));
-        const off = (rFull - rNow) * 0.75 * side; // ä¸€ä¾§è¾¹ç¼˜é½å¹³ï¼Œå¦ä¸€ä¾§æ”¶æ‹¢
+        const off = (rFull - rNow) * 0.75 * side; // 一侧边缘齐平，另一侧收拢
         brushStamp(q.x - q.dy * off / aspect, q.y + q.dx * off, q.dx, q.dy, w, q.ink, stroke.seed);
       } else {
-        brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed); // é¡¿æ”¶åœ†å¤´
+        brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed); // 顿收圆头
       }
     }
     if (fast && endW > 0.008) {
-      // å‡ºé”‹ç”©å°¾ï¼šè¶Šè¿‡æŠ¬ç¬”ç‚¹çš„ç»†é¡»ï¼Œå»¶ç»­è¿‘æ®µå¼§åº¦ï¼Œå¦‚ç¬”æ¯«ç¦»çº¸ä¸€ç”©
+      // 出锋甩尾：越过抬笔点的细须，延续近段弧度，如笔毫离纸一甩
       const last = pts[pts.length - 1];
       const rT = Math.sqrt(correctRadius((brushSize * last.w) / 100));
       let ang = Math.atan2(stroke.dirY, stroke.dirX);
@@ -848,7 +848,7 @@ function endStroke() {
       }
     }
   }
-  // ç¬”ç”»åˆå…¥æŸ“æ–™åœºï¼Œæ¸…ç©ºç¬”ç”»å±‚
+  // 笔画合入染料场，清空笔画层
   strokeCompositeProgram.bind();
   gl.uniform2f(strokeCompositeProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
   gl.uniform1i(strokeCompositeProgram.uniforms.uTarget, dye.read.attach(0));
@@ -865,7 +865,7 @@ function endStroke() {
 }
 
 // ---------- Pointer ----------
-// è°ƒè¯•è½¨è¿¹å±‚ï¼šURL åŠ  ?debug å¼€å¯
+// 调试轨迹层：URL 加 ?debug 开启
 const dbg = location.search.includes('debug') ? (() => {
   const d = document.createElement('div');
   d.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99;background:rgba(0,0,0,.78);color:#7f7;font:12px/1.5 monospace;padding:10px;border-radius:6px;max-width:480px;white-space:pre;pointer-events:none;';
@@ -890,7 +890,7 @@ canvas.addEventListener('pointerdown', e => {
   dbg && dbg(`DOWN t=${performance.now().toFixed(0)} xy=${e.clientX},${e.clientY} p=${e.pressure} type=${e.pointerType}`);
   const p = toUV(e);
   pointerDown = true; lastX = p.x; lastY = p.y;
-  pushUndo(); // æ¯ä¸ªåŠ¨ä½œå‰ç•™å¿«ç…§
+  pushUndo(); // 每个动作前留快照
   if (isBrush()) startStroke(p, e.pressure);
   else clickBloom(p.x, p.y, currentPigment);
   if (!interacted) { interacted = true; hint.classList.add('hide'); }
@@ -903,7 +903,7 @@ canvas.addEventListener('pointermove', e => {
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of evs) {
       const q = toUV(ev);
-      const k = 1 - stabAmt * 0.9; // é˜²æŠ–ï¼šç¬”å°–ä½ç½®ä½Žé€šæ»¤æ³¢
+      const k = 1 - stabAmt * 0.9; // 防抖：笔尖位置低通滤波
       stroke.fx += (q.x - stroke.fx) * k;
       stroke.fy += (q.y - stroke.fy) * k;
       strokeTo({ x: stroke.fx, y: stroke.fy }, ev.pressure, ev.timeStamp);
@@ -944,16 +944,16 @@ PIGMENTS.forEach((pig, i) => {
 document.getElementById('brush').addEventListener('input', e => {
   brushSize = parseFloat(e.target.value);
 });
-// â€”â€” è°ƒå¢¨ä¸Žæ‰‹æ„Ÿ â€”â€”
+// —— 调墨与手感 ——
 let inkConc = 0.85, inkWater = 0.35, stabAmt = 0.45;
 document.getElementById('conc').addEventListener('input', e => { inkConc = parseFloat(e.target.value); });
 document.getElementById('water').addEventListener('input', e => { inkWater = parseFloat(e.target.value); });
 document.getElementById('stab').addEventListener('input', e => { stabAmt = parseFloat(e.target.value); });
 
-// â€”â€” æ¸²æŸ“ä»‹è´¨ & ç”»ç¬” â€”â€”
+// —— 渲染介质 & 画笔 ——
 const BRUSH_OPTIONS = {
-  ink: [{ v: 'bloom', label: 'æ™•æŸ“' }, { v: 'maobi', label: 'æ°´å¢¨æ¯›ç¬”' }],
-  oil: [{ v: 'oilbrush', label: 'æ²¹ç”»ç¬”' }]
+  ink: [{ v: 'bloom', label: '晕染' }, { v: 'maobi', label: '水墨毛笔' }],
+  oil: [{ v: 'oilbrush', label: '油画笔' }]
 };
 let canvasMode = 'ink', brushTool = 'maobi';
 try {
@@ -983,21 +983,21 @@ canvasSel.addEventListener('change', () => {
   const c = canvasSel.value;
   if (c === canvasMode) return;
   applyMedium(c);
-  clearCanvasOnly(); // æ¢ä»‹è´¨éœ€æ¢ç”»å¸ƒ
+  clearCanvasOnly(); // 换介质需换画布
   resetHistory();
-  showToast(c === 'oil' ? 'å·²æ¢æ²¹ç”»å¸ƒï¼Œé‡æ–°èµ·ç¬”' : 'å·²æ¢æ°´å¢¨çº¸ï¼Œé‡æ–°èµ·ç¬”');
+  showToast(c === 'oil' ? '已换油画布，重新起笔' : '已换水墨纸，重新起笔');
 });
 brushSel.addEventListener('change', () => {
   brushTool = brushSel.value;
   persistMode();
-  if (brushTool === 'maobi') showToast('æ¯›ç¬”ï¼šæ…¢æŒ‰å¿«æè§æµ“æ·¡ï¼ŒæŠ¬ç¬”å¿«å‡ºé”‹ã€åœé¡¿åˆ™é¡¿æ”¶');
+  if (brushTool === 'maobi') showToast('毛笔：慢按快提见浓淡，抬笔快出锋、停顿则顿收');
 });
 applyMedium(canvasMode, brushTool);
 
-// â€”â€” æ’¤é”€ / é‡åšï¼ˆGPU åŠåˆ†è¾¨çŽ‡å¿«ç…§æ± ï¼Œ8 æ­¥ï¼‰ â€”â€”
+// —— 撤销 / 重做（GPU 半分辨率快照池，8 步） ——
 var undoPool, undoStack, redoStack;
 function initUndo() {
-  // æ³¨æ„ï¼šinitUndo åœ¨è„šæœ¬æ—©æœŸï¼ˆinitFramebuffersï¼‰å³è¢«è°ƒç”¨ï¼Œå†…éƒ¨ä¸å¯å¼•ç”¨ let/const é¡¶å±‚å˜é‡
+  // 注意：initUndo 在脚本早期（initFramebuffers）即被调用，内部不可引用 let/const 顶层变量
   if (undoPool) [...undoPool, ...undoStack, ...redoStack].forEach(f => {
     gl.deleteFramebuffer(f.fbo); gl.deleteTexture(f.texture);
   });
@@ -1011,7 +1011,7 @@ function allocSlot(stealFirst) {
   if (undoPool.length) return undoPool.pop();
   const a = stealFirst === 'redo' ? redoStack : undoStack;
   const b = stealFirst === 'redo' ? undoStack : redoStack;
-  return a.length ? a.shift() : b.shift(); // æŒ¤æŽ‰æœ€æ—§ä¸€æ­¥
+  return a.length ? a.shift() : b.shift(); // 挤掉最旧一步
 }
 function pushUndo() {
   while (redoStack.length) undoPool.push(redoStack.pop());
@@ -1072,14 +1072,14 @@ window.addEventListener('keydown', e => {
   else if (k === 'y') { e.preventDefault(); redoOnce(); }
 });
 document.getElementById('clear').addEventListener('click', () => {
-  pushUndo(); // æ´—ç šä¹Ÿå¯æ’¤é”€
+  pushUndo(); // 洗砚也可撤销
   clearCanvasOnly();
 });
 
-// ---------- å­˜ç”» / å–ç”» / ç…§ç‰‡ ----------
+// ---------- 存画 / 取画 / 照片 ----------
 const SAVE_KEY = 'inkwash_painting_v3';
-const SAVE_MAX = 1600;   // å­˜ç”»å¿«ç…§æœ€é•¿è¾¹
-const ABSORB_MAX = 6.0;  // å¸å…‰åº¦ç¼–ç ä¸Šé™
+const SAVE_MAX = 1600;   // 存画快照最长边
+const ABSORB_MAX = 6.0;  // 吸光度编码上限
 
 const toast = document.getElementById('toast');
 let toastTimer = null;
@@ -1090,7 +1090,7 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
 }
 
-// ç”¨ clearProgram(value=1) ä½œçº¹ç†æ‹·è´/ç¼©æ”¾
+// 用 clearProgram(value=1) 作纹理拷贝/缩放
 function copyTo(targetFBO, sourceTexture) {
   clearProgram.bind();
   gl.uniform2f(clearProgram.uniforms.texelSize, 1 / targetFBO.width, 1 / targetFBO.height);
@@ -1101,7 +1101,7 @@ function copyTo(targetFBO, sourceTexture) {
   blit(targetFBO);
 }
 
-// å­˜ç”»ï¼šæŸ“æ–™åœºç¼©æ”¾è¯»å‡º â†’ sqrt ç¼–ç ä¸º PNGï¼ˆä½Žæµ“åº¦ç²¾åº¦æ›´é«˜ï¼‰â†’ localStorage
+// 存画：染料场缩放读出 → sqrt 编码为 PNG（低浓度精度更高）→ localStorage
 function saveState() {
   try {
     const scale = Math.min(1, SAVE_MAX / Math.max(dye.width, dye.height));
@@ -1114,7 +1114,7 @@ function saveState() {
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, pixels);
     gl.deleteFramebuffer(tmp.fbo);
     gl.deleteTexture(tmp.texture);
-    // ä¸ŠåŠï¼šé¢œè‰²ä¸‰é€šé“ï¼›ä¸‹åŠï¼šåŽšåº¦é€šé“ï¼ˆæ²¹ç”»ç”¨ï¼‰ï¼Œå‡ sqrt ç¼–ç 
+    // 上半：颜色三通道；下半：厚度通道（油画用），均 sqrt 编码
     const enc = v => Math.sqrt(Math.min(v / ABSORB_MAX, 1)) * 255;
     const c2d = document.createElement('canvas');
     c2d.width = w; c2d.height = h * 2;
@@ -1132,16 +1132,16 @@ function saveState() {
     }
     ctx.putImageData(img, 0, 0);
     localStorage.setItem(SAVE_KEY, JSON.stringify({ w, h, mode: { c: canvasMode, b: brushTool }, png: c2d.toDataURL('image/png'), t: Date.now() }));
-    showToast('ç”»å·²è—å…¥ç šåŒ£');
+    showToast('画已藏入砚匣');
   } catch (err) {
-    showToast('å­˜ç”»å¤±è´¥ï¼šæµè§ˆå™¨å­˜å‚¨ç©ºé—´ä¸è¶³');
+    showToast('存画失败：浏览器存储空间不足');
   }
 }
 
-// å–ç”»ï¼šPNG è§£ç  â†’ è¿˜åŽŸå¸å…‰åº¦ â†’ å†™å›žæŸ“æ–™åœºï¼ˆæµåœºæ¸…é›¶ï¼‰
+// 取画：PNG 解码 → 还原吸光度 → 写回染料场（流场清零）
 function loadState() {
   const raw = localStorage.getItem(SAVE_KEY);
-  if (!raw) { showToast('ç šåŒ£ä¸­å°šæ— å­˜ç”»'); return; }
+  if (!raw) { showToast('砚匣中尚无存画'); return; }
   const { w, h, png, mode } = JSON.parse(raw);
   const image = new Image();
   image.onload = () => {
@@ -1159,7 +1159,7 @@ function loadState() {
       floats[i * 4 + 2] = dec(img[i * 4 + 2]);
       floats[i * 4 + 3] = dec(img[(n + i) * 4]);
     }
-    if (mode && mode.c) applyMedium(mode.c, mode.b); // æ¢å¤è¯¥ç”»ä½œçš„ä»‹è´¨
+    if (mode && mode.c) applyMedium(mode.c, mode.b); // 恢复该画作的介质
     const tex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -1168,30 +1168,30 @@ function loadState() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, floats);
-    pushUndo(); // å–ç”»å‰ç•™å¿«ç…§
+    pushUndo(); // 取画前留快照
     clearCanvasOnly();
     copyTo(dye.write, tex);
     dye.swap();
     gl.deleteTexture(tex);
     if (!interacted) { interacted = true; hint.classList.add('hide'); }
-    showToast('ç”»å·²å–å‡º');
+    showToast('画已取出');
   };
   image.src = png;
 }
 
-// ç…§ç‰‡ï¼šå½“å‰ç”»é¢ï¼ˆå«å®£çº¸è´¨æ„Ÿï¼‰å¯¼å‡ºä¸º PNG
+// 照片：当前画面（含宣纸质感）导出为 PNG
 function exportPhoto() {
   render();
   canvas.toBlob(blob => {
-    if (!blob) { showToast('å¯¼å‡ºå¤±è´¥'); return; }
+    if (!blob) { showToast('导出失败'); return; }
     const d = new Date();
     const pad = x => String(x).padStart(2, '0');
     const a = document.createElement('a');
-    a.download = `æ°´å¢¨_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
+    a.download = `水墨_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
     a.href = URL.createObjectURL(blob);
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    showToast('ç…§ç‰‡å·²ä¿å­˜åˆ°ä¸‹è½½');
+    showToast('照片已保存到下载');
   }, 'image/png');
 }
 
@@ -1204,15 +1204,14 @@ let lastTime = performance.now();
 function frame(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.0166);
   lastTime = now;
-  if (!isBrush()) step(dt); // æ¯›ç¬”æ¨¡å¼ï¼šç¬”è¿¹é™æ­¢ï¼Œä¸è·‘æµä½“
+  if (!isBrush()) step(dt); // 毛笔模式：笔迹静止，不跑流体
   render();
   requestAnimationFrame(frame);
 }
 
-// å¼€å·ä¸€ç‚¹æ·¡å¢¨ï¼ˆæ™•æŸ“ç¬”æ—¶ï¼‰
+// 开卷一点淡墨（晕染笔时）
 if (canvasMode === 'ink' && brushTool === 'bloom') clickBloom(0.5, 0.55, PIGMENTS[0]);
 requestAnimationFrame(frame);
 </script>
 </body>
 </html>
-
