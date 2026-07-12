@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b26</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b28</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -906,7 +906,8 @@ canvas.addEventListener('pointermove', e => {
   if (!pointerDown) return;
   if (isBrush()) {
     if (!stroke) return;
-    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    const raw = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+    const evs = (raw && raw.length) ? raw : [e]; // 合成事件/部分浏览器返回空列表
     for (const ev of evs) {
       const q = toUV(ev);
       const k = 1 - stabAmt * 0.9; // 防抖：笔尖位置低通滤波
