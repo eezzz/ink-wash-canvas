@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>水墨 · 流彩</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #efe9dc; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: crosshair; }
+
+  .title {
+    position: fixed; top: 24px; left: 28px; pointer-events: none;
+    font-family: "Kaiti SC", "KaiTi", "STKaiti", "Noto Serif SC", serif;
+    color: rgba(40, 38, 34, 0.75); user-select: none;
+  }
+  .title h1 { font-size: 26px; font-weight: 400; letter-spacing: 6px; }
+  .title p { font-size: 12px; letter-spacing: 3px; margin-top: 4px; color: rgba(40,38,34,.45); }
+
+  .hint {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-family: "Kaiti SC", "KaiTi", "STKaiti", "Noto Serif SC", serif;
+    font-size: 15px; letter-spacing: 4px; color: rgba(40,38,34,.5);
+    pointer-events: none; user-select: none; transition: opacity 1.2s ease;
+  }
+  .hint.hide { opacity: 0; }
+
+  .panel {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 20px; border-radius: 40px;
+    background: rgba(250, 247, 240, 0.72);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 6px 24px rgba(50, 45, 35, 0.18), inset 0 0 0 1px rgba(255,255,255,.5);
+    font-family: "Kaiti SC", "KaiTi", "STKaiti", serif;
+    flex-wrap: wrap; justify-content: center; max-width: 94vw;
+  }
+  .swatches { display: flex; gap: 10px; align-items: center; }
+  .swatch {
+    width: 34px; height: 34px; border-radius: 50%; cursor: pointer; border: none;
+    position: relative; transition: transform .18s ease, box-shadow .18s ease;
+    box-shadow: inset 0 -3px 6px rgba(0,0,0,.25), inset 0 2px 4px rgba(255,255,255,.25), 0 2px 5px rgba(0,0,0,.18);
+  }
+  .swatch:hover { transform: scale(1.12); }
+  .swatch.active { transform: scale(1.18); box-shadow: 0 0 0 3px rgba(250,247,240,.9), 0 0 0 5px currentColor, 0 3px 8px rgba(0,0,0,.25); }
+  .swatch .name {
+    position: absolute; bottom: 42px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; letter-spacing: 2px; color: rgba(40,38,34,.7);
+    background: rgba(250,247,240,.9); padding: 2px 8px; border-radius: 8px;
+    opacity: 0; pointer-events: none; transition: opacity .18s; white-space: nowrap;
+  }
+  .swatch:hover .name, .swatch.active .name { opacity: 1; }
+
+  .divider { width: 1px; height: 26px; background: rgba(40,38,34,.15); }
+
+  .brush { display: flex; align-items: center; gap: 8px; color: rgba(40,38,34,.65); font-size: 13px; letter-spacing: 2px; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 90px; height: 3px; border-radius: 3px;
+    background: rgba(40,38,34,.25); outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #3a3630; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%; border: none;
+    background: #3a3630; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  }
+
+  .btn {
+    font-family: inherit; font-size: 13px; letter-spacing: 3px; cursor: pointer;
+    padding: 7px 16px; border-radius: 20px; border: 1px solid rgba(40,38,34,.3);
+    background: transparent; color: rgba(40,38,34,.7); transition: all .18s;
+  }
+  .btn:hover { background: rgba(40,38,34,.85); color: #f5f0e6; }
+
+  .seg { display: flex; border: 1px solid rgba(40,38,34,.3); border-radius: 20px; overflow: hidden; }
+  .seg button {
+    font-family: inherit; font-size: 12px; letter-spacing: 2px; cursor: pointer;
+    padding: 7px 12px; border: none; background: transparent;
+    color: rgba(40,38,34,.6); transition: all .18s;
+  }
+  .seg button.on { background: rgba(40,38,34,.85); color: #f5f0e6; }
+
+  .toast {
+    position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+    padding: 8px 20px; border-radius: 20px;
+    background: rgba(40,38,34,.85); color: #f5f0e6;
+    font-family: "Kaiti SC", "KaiTi", "STKaiti", serif;
+    font-size: 13px; letter-spacing: 3px;
+    opacity: 0; transition: opacity .35s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+
+  .err {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: #efe9dc; color: #5a5348; font-family: serif; font-size: 16px; text-align: center; padding: 20px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS</p></div>
+<div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
+<div class="panel">
+  <div class="swatches" id="swatches"></div>
+  <div class="divider"></div>
+  <div class="brush">笔锋 <input type="range" id="brush" min="0.06" max="0.85" step="0.01" value="0.22"></div>
+  <div class="seg" id="surface">
+    <button data-s="0">无纹</button>
+    <button data-s="1">宣纸</button>
+    <button data-s="2">油画</button>
+  </div>
+  <button class="btn" id="clear">洗 砚</button>
+  <div class="divider"></div>
+  <button class="btn" id="save">存 画</button>
+  <button class="btn" id="load">取 画</button>
+  <button class="btn" id="photo">照 片</button>
+</div>
+<div class="toast" id="toast"></div>
+<div class="err" id="err">很抱歉，您的浏览器不支持 WebGL2 浮点渲染，无法运行水墨模拟。<br>请使用最新版 Chrome / Edge / Firefox / Safari。</div>
+
+<script>
+'use strict';
+// ============ 水墨流彩 · WebGL2 流体模拟 + 颜料吸光混色 (Beer–Lambert) ============
+// 技术要点：Stable Fluids (半拉格朗日平流 + Jacobi 压力求解 + 涡量约束)，
+// 染料以「吸光度」存储，显示时 paper * exp(-absorbance)，颜色如真实颜料般减色混合。
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { alpha: false, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: true });
+const extCBF = gl && gl.getExtension('EXT_color_buffer_float');
+if (!gl || !extCBF) {
+  document.getElementById('err').style.display = 'flex';
+  throw new Error('WebGL2 float rendering unsupported');
+}
+
+const config = {
+  SIM_RESOLUTION: 512,   // 流场分辨率：越高墨丝越细腻
+  DYE_RESOLUTION: 2560,  // 染料分辨率：决定墨迹边缘细节
+  DENSITY_DISSIPATION: 0.015, // 墨色极缓慢褪散
+  VELOCITY_DISSIPATION: 0.55, // 水流渐止
+  PRESSURE: 0.8,
+  PRESSURE_ITERATIONS: 20,
+  CURL: 16,                   // 涡量 → 墨丝回旋
+  SPLAT_FORCE: 5200,
+  INK_STRENGTH: 2.2           // 显色浓度
+};
+
+// ---------- 颜料（国画色） ----------
+const PIGMENTS = [
+  { name: '墨',   hex: '#17171b' },
+  { name: '花青', hex: '#1d5c77' },
+  { name: '石青', hex: '#2e5a9e' },
+  { name: '石绿', hex: '#3b806b' },
+  { name: '藤黄', hex: '#d9a521' },
+  { name: '朱砂', hex: '#c24c2e' },
+  { name: '胭脂', hex: '#9e2a47' },
+  { name: '青莲', hex: '#6b4c93' },
+  { name: '赭石', hex: '#96613d' }
+];
+function hexToAbsorb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  return { r: 1 - r, g: 1 - g, b: 1 - b }; // 吸光度 = 1 - 反射色
+}
+let currentPigment = PIGMENTS[0];
+let brushSize = 0.22;
+
+// ---------- Shaders ----------
+function compileShader(type, source) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, source.trim());
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+class Program {
+  constructor(fragSrc) {
+    this.program = gl.createProgram();
+    gl.attachShader(this.program, baseVertex);
+    gl.attachShader(this.program, compileShader(gl.FRAGMENT_SHADER, fragSrc));
+    gl.linkProgram(this.program);
+    if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(this.program));
+    this.uniforms = {};
+    const count = gl.getProgramParameter(this.program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < count; i++) {
+      const name = gl.getActiveUniform(this.program, i).name;
+      this.uniforms[name] = gl.getUniformLocation(this.program, name);
+    }
+  }
+  bind() { gl.useProgram(this.program); }
+}
+
+const baseVertex = compileShader(gl.VERTEX_SHADER, `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aPosition;
+out vec2 vUv; out vec2 vL; out vec2 vR; out vec2 vT; out vec2 vB;
+uniform vec2 texelSize;
+void main () {
+  vUv = aPosition * 0.5 + 0.5;
+  vL = vUv - vec2(texelSize.x, 0.0);
+  vR = vUv + vec2(texelSize.x, 0.0);
+  vT = vUv + vec2(0.0, texelSize.y);
+  vB = vUv - vec2(0.0, texelSize.y);
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}`);
+
+const splatProgram = new Program(`#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTarget;
+uniform float aspectRatio;
+uniform vec4 color;
+uniform vec2 point;
+uniform float radius;
+void main () {
+  vec2 p = vUv - point;
+  p.x *= aspectRatio;
+  vec4 splat = exp(-dot(p, p) / radius) * color;
+  vec4 base = texture(uTarget, vUv);
+  fragColor = base + splat;
+}`);
+
+const advectionProgram = new Program(`#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uVelocity;
+uniform sampler2D uSource;
+uniform vec2 texelSize;
+uniform float dt;
+uniform float dissipation;
+void main () {
+  vec2 coord = vUv - dt * texture(uVelocity, vUv).xy * texelSize;
+  vec4 result = texture(uSource, coord);
+  float decay = 1.0 + dissipation * dt;
+  fragColor = result / decay;
+}`);
+
+const divergenceProgram = new Program(`#version 300 es
+precision mediump float; precision mediump sampler2D;
+in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+out vec4 fragColor;
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture(uVelocity, vL).x;
+  float R = texture(uVelocity, vR).x;
+  float T = texture(uVelocity, vT).y;
+  float B = texture(uVelocity, vB).y;
+  vec2 C = texture(uVelocity, vUv).xy;
+  if (vL.x < 0.0) { L = -C.x; }
+  if (vR.x > 1.0) { R = -C.x; }
+  if (vT.y > 1.0) { T = -C.y; }
+  if (vB.y < 0.0) { B = -C.y; }
+  float div = 0.5 * (R - L + T - B);
+  fragColor = vec4(div, 0.0, 0.0, 1.0);
+}`);
+
+const curlProgram = new Program(`#version 300 es
+precision mediump float; precision mediump sampler2D;
+in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+out vec4 fragColor;
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture(uVelocity, vL).y;
+  float R = texture(uVelocity, vR).y;
+  float T = texture(uVelocity, vT).x;
+  float B = texture(uVelocity, vB).x;
+  float vorticity = R - L - T + B;
+  fragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
+}`);
+
+const vorticityProgram = new Program(`#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+out vec4 fragColor;
+uniform sampler2D uVelocity;
+uniform sampler2D uCurl;
+uniform float curl;
+uniform float dt;
+void main () {
+  float L = texture(uCurl, vL).x;
+  float R = texture(uCurl, vR).x;
+  float T = texture(uCurl, vT).x;
+  float B = texture(uCurl, vB).x;
+  float C = texture(uCurl, vUv).x;
+  vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+  force /= length(force) + 0.0001;
+  force *= curl * C;
+  force.y *= -1.0;
+  vec2 velocity = texture(uVelocity, vUv).xy;
+  velocity += force * dt;
+  velocity = clamp(velocity, vec2(-1000.0), vec2(1000.0));
+  fragColor = vec4(velocity, 0.0, 1.0);
+}`);
+
+const pressureProgram = new Program(`#version 300 es
+precision mediump float; precision mediump sampler2D;
+in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+out vec4 fragColor;
+uniform sampler2D uPressure;
+uniform sampler2D uDivergence;
+void main () {
+  float L = texture(uPressure, vL).x;
+  float R = texture(uPressure, vR).x;
+  float T = texture(uPressure, vT).x;
+  float B = texture(uPressure, vB).x;
+  float divergence = texture(uDivergence, vUv).x;
+  float pressure = (L + R + B + T - divergence) * 0.25;
+  fragColor = vec4(pressure, 0.0, 0.0, 1.0);
+}`);
+
+const gradientSubtractProgram = new Program(`#version 300 es
+precision mediump float; precision mediump sampler2D;
+in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+out vec4 fragColor;
+uniform sampler2D uPressure;
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture(uPressure, vL).x;
+  float R = texture(uPressure, vR).x;
+  float T = texture(uPressure, vT).x;
+  float B = texture(uPressure, vB).x;
+  vec2 velocity = texture(uVelocity, vUv).xy;
+  velocity.xy -= vec2(R - L, T - B);
+  fragColor = vec4(velocity, 0.0, 1.0);
+}`);
+
+const clearProgram = new Program(`#version 300 es
+precision mediump float; precision mediump sampler2D;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTexture;
+uniform float value;
+void main () {
+  fragColor = value * texture(uTexture, vUv);
+}`);
+
+const displayProgram = new Program(`#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+out vec4 fragColor;
+uniform sampler2D uDye;
+uniform float uInkStrength;
+uniform int uSurface; // 0 无纹理 / 1 宣纸 / 2 油画布
+float hash (vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise (vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float dens (vec3 a) { return dot(a, vec3(0.3333)); }
+void main () {
+  vec3 absorb = texture(uDye, vUv).rgb;
+  vec2 px = gl_FragCoord.xy;
+  vec3 col;
+  if (uSurface == 0) {
+    // —— 无纹理：素净平滑 ——
+    vec3 paper = vec3(0.958, 0.942, 0.905);
+    col = paper * exp(-absorb * uInkStrength);
+  } else if (uSurface == 1) {
+    // —— 宣纸：斑驳 + 纤维 + 细颗粒，墨随纸性呼吸 ——
+    float mottle = vnoise(px * 0.012);
+    float fiberH = vnoise(vec2(px.x * 0.02, px.y * 0.55));
+    float fiberV = vnoise(vec2(px.x * 0.55, px.y * 0.02));
+    float grain  = hash(px);
+    float tex = mottle * 0.5 + (fiberH + fiberV) * 0.2 + grain * 0.1;
+    vec3 paper = mix(vec3(0.965, 0.945, 0.898), vec3(0.885, 0.855, 0.785), tex * 0.55);
+    col = paper * exp(-absorb * uInkStrength * (0.92 + tex * 0.16));
+  } else {
+    // —— 油画：颜料场为 (预乘颜色, 厚度)，不透明覆盖 + 厚度浮雕光照 + 油光 ——
+    vec4 dyeS = texture(uDye, vUv);
+    float amt = dyeS.a;
+    vec3 paint = clamp(dyeS.rgb / max(amt, 1e-4), 0.0, 1.0);
+    float coverage = 1.0 - exp(-amt * 2.4);
+    // 素净画布底：极淡的宽纹理，不干扰画面
+    float nz = vnoise(px * 0.04);
+    float weave = vnoise(vec2(px.x * 0.11, px.y * 0.023)) * 0.5
+                + vnoise(vec2(px.x * 0.023, px.y * 0.11)) * 0.5;
+    vec3 canvasCol = mix(vec3(0.936, 0.920, 0.886), vec3(0.905, 0.885, 0.845), weave * 0.5 + nz * 0.2);
+    col = mix(canvasCol, paint, coverage);
+    // 厚度场 → 法线：仅颜料堆叠产生浮雕，画布本身保持平整
+    float hL = texture(uDye, vL).a;
+    float hR = texture(uDye, vR).a;
+    float hT = texture(uDye, vT).a;
+    float hB = texture(uDye, vB).a;
+    vec2 slope = vec2(hR - hL, hT - hB) * 4.0;
+    vec3 n = normalize(vec3(-slope, 1.0));
+    vec3 lightDir = normalize(vec3(-0.35, 0.45, 0.82));
+    float diff = max(dot(n, lightDir), 0.0);
+    col *= 0.72 + 0.38 * diff;
+    vec3 hv = normalize(lightDir + vec3(0.0, 0.0, 1.0));
+    float spec = pow(max(dot(n, hv), 0.0), 32.0) * coverage * 0.55;
+    col += spec;
+  }
+  // 淡淡晕影
+  float d = distance(vUv, vec2(0.5));
+  col *= mix(1.0, 0.95, smoothstep(0.5, 0.9, d));
+  fragColor = vec4(col, 1.0);
+}`);
+
+// ---------- Geometry / blit ----------
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
+gl.disable(gl.BLEND);
+
+function blit(target) {
+  if (target == null) {
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  } else {
+    gl.viewport(0, 0, target.width, target.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  }
+  gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+}
+
+// ---------- Framebuffers ----------
+function createFBO(w, h, internalFormat, format, type, filter) {
+  gl.activeTexture(gl.TEXTURE0);
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return {
+    texture, fbo, width: w, height: h,
+    texelSizeX: 1 / w, texelSizeY: 1 / h,
+    attach(id) {
+      gl.activeTexture(gl.TEXTURE0 + id);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      return id;
+    }
+  };
+}
+function createDoubleFBO(w, h, internalFormat, format, type, filter) {
+  let fbo1 = createFBO(w, h, internalFormat, format, type, filter);
+  let fbo2 = createFBO(w, h, internalFormat, format, type, filter);
+  return {
+    width: w, height: h,
+    texelSizeX: 1 / w, texelSizeY: 1 / h,
+    get read() { return fbo1; },
+    get write() { return fbo2; },
+    swap() { const t = fbo1; fbo1 = fbo2; fbo2 = t; }
+  };
+}
+function getResolution(resolution) {
+  let aspect = gl.drawingBufferWidth / gl.drawingBufferHeight;
+  if (aspect < 1) aspect = 1 / aspect;
+  const min = Math.round(resolution), max = Math.round(resolution * aspect);
+  return gl.drawingBufferWidth > gl.drawingBufferHeight
+    ? { width: max, height: min }
+    : { width: min, height: max };
+}
+
+let dye, velocity, divergence, curl, pressure;
+function initFramebuffers() {
+  const simRes = getResolution(config.SIM_RESOLUTION);
+  const dyeRes = getResolution(config.DYE_RESOLUTION);
+  const hf = gl.HALF_FLOAT;
+  dye        = createDoubleFBO(dyeRes.width, dyeRes.height, gl.RGBA16F, gl.RGBA, hf, gl.LINEAR);
+  velocity   = createDoubleFBO(simRes.width, simRes.height, gl.RG16F, gl.RG, hf, gl.LINEAR);
+  divergence = createFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
+  curl       = createFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
+  pressure   = createDoubleFBO(simRes.width, simRes.height, gl.R16F, gl.RED, hf, gl.NEAREST);
+}
+
+function resizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(canvas.clientWidth * dpr);
+  const h = Math.floor(canvas.clientHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+    return true;
+  }
+  return false;
+}
+resizeCanvas();
+initFramebuffers();
+window.addEventListener('resize', () => { if (resizeCanvas()) initFramebuffers(); });
+
+// ---------- Simulation step ----------
+function step(dt) {
+  gl.disable(gl.BLEND);
+
+  curlProgram.bind();
+  gl.uniform2f(curlProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.attach(0));
+  blit(curl);
+
+  vorticityProgram.bind();
+  gl.uniform2f(vorticityProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(vorticityProgram.uniforms.uCurl, curl.attach(1));
+  gl.uniform1f(vorticityProgram.uniforms.curl, isOil() ? 3 : config.CURL);
+  gl.uniform1f(vorticityProgram.uniforms.dt, dt);
+  blit(velocity.write); velocity.swap();
+
+  divergenceProgram.bind();
+  gl.uniform2f(divergenceProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(divergenceProgram.uniforms.uVelocity, velocity.read.attach(0));
+  blit(divergence);
+
+  clearProgram.bind();
+  gl.uniform2f(clearProgram.uniforms.texelSize, pressure.texelSizeX, pressure.texelSizeY);
+  gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
+  gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE);
+  blit(pressure.write); pressure.swap();
+
+  pressureProgram.bind();
+  gl.uniform2f(pressureProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(pressureProgram.uniforms.uDivergence, divergence.attach(0));
+  for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
+    gl.uniform1i(pressureProgram.uniforms.uPressure, pressure.read.attach(1));
+    blit(pressure.write); pressure.swap();
+  }
+
+  gradientSubtractProgram.bind();
+  gl.uniform2f(gradientSubtractProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(gradientSubtractProgram.uniforms.uPressure, pressure.read.attach(0));
+  gl.uniform1i(gradientSubtractProgram.uniforms.uVelocity, velocity.read.attach(1));
+  blit(velocity.write); velocity.swap();
+
+  advectionProgram.bind();
+  gl.uniform2f(advectionProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(advectionProgram.uniforms.uSource, velocity.read.attach(0));
+  gl.uniform1f(advectionProgram.uniforms.dt, dt);
+  // 油画：颜料黏稠，笔势即停不流动；水墨：水润流淌
+  gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 4.5 : config.VELOCITY_DISSIPATION);
+  blit(velocity.write); velocity.swap();
+
+  gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(advectionProgram.uniforms.uSource, dye.read.attach(1));
+  gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 0.0 : config.DENSITY_DISSIPATION);
+  blit(dye.write); dye.swap();
+}
+
+function render() {
+  displayProgram.bind();
+  gl.uniform2f(displayProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
+  gl.uniform1i(displayProgram.uniforms.uDye, dye.read.attach(0));
+  gl.uniform1f(displayProgram.uniforms.uInkStrength, config.INK_STRENGTH);
+  gl.uniform1i(displayProgram.uniforms.uSurface, surfaceMode);
+  blit(null);
+}
+
+// ---------- Splats ----------
+function correctRadius(radius) {
+  const aspect = canvas.width / canvas.height;
+  return aspect > 1 ? radius * aspect : radius;
+}
+function splat(x, y, dx, dy, absorb, radiusScale) {
+  splatProgram.bind();
+  gl.uniform2f(splatProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+  gl.uniform2f(splatProgram.uniforms.point, x, y);
+  gl.uniform1f(splatProgram.uniforms.radius, correctRadius((brushSize * radiusScale) / 100));
+
+  gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
+  gl.uniform4f(splatProgram.uniforms.color, dx, dy, 0, 0);
+  blit(velocity.write); velocity.swap();
+
+  gl.uniform1i(splatProgram.uniforms.uTarget, dye.read.attach(0));
+  gl.uniform4f(splatProgram.uniforms.color, absorb.r, absorb.g, absorb.b, absorb.a || 0);
+  blit(dye.write); dye.swap();
+}
+function scaleAbsorb(a, s) { return { r: a.r * s, g: a.g * s, b: a.b * s, a: 0 }; }
+function hexToRGB(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
+}
+function oilPaint(hex, amt) { // 预乘颜色 + 厚度
+  const c = hexToRGB(hex);
+  return { r: c.r * amt, g: c.g * amt, b: c.b * amt, a: amt };
+}
+const isOil = () => surfaceMode === 2;
+const OIL_FORCE = 2600;
+
+// 点染：水墨 = 墨晕绽开；油画 = 不透明厚涂色块
+function clickBloom(x, y, pigment) {
+  if (isOil()) {
+    splat(x, y, 0, 0, oilPaint(pigment.hex, 0.9), 1.5);
+    for (let i = 0; i < 5; i++) {
+      const ang = Math.random() * Math.PI * 2, rr = Math.random() * 0.006;
+      splat(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr, 0, 0,
+        oilPaint(pigment.hex, 0.3 + Math.random() * 0.5), 0.4 + Math.random() * 0.6);
+    }
+    return;
+  }
+  const a = hexToAbsorb(pigment.hex);
+  splat(x, y, 0, 0, scaleAbsorb(a, 0.55), 1.4);
+  const n = 14;
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+    const speed = 220 + Math.random() * 480;
+    const dx = Math.cos(ang) * speed, dy = Math.sin(ang) * speed;
+    const ox = Math.cos(ang) * 0.004, oy = Math.sin(ang) * 0.004;
+    splat(x + ox, y + oy, dx, dy, scaleAbsorb(a, 0.05 + Math.random() * 0.12), 0.3 + Math.random() * 0.5);
+  }
+}
+// 拖染：水墨 = 注墨随水流；油画 = 铺颜料 + 抹开已有颜料
+function dragSplat(x, y, dx, dy, pigment) {
+  if (isOil()) {
+    splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, oilPaint(pigment.hex, 0.35), 1.0);
+    return;
+  }
+  const a = hexToAbsorb(pigment.hex);
+  splat(x, y, dx * config.SPLAT_FORCE, dy * config.SPLAT_FORCE, scaleAbsorb(a, 0.14), 1.0);
+}
+
+// ---------- Pointer ----------
+const hint = document.getElementById('hint');
+let pointerDown = false, lastX = 0, lastY = 0, interacted = false;
+function toUV(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / rect.width,
+    y: 1 - (e.clientY - rect.top) / rect.height
+  };
+}
+canvas.addEventListener('pointerdown', e => {
+  const p = toUV(e);
+  pointerDown = true; lastX = p.x; lastY = p.y;
+  clickBloom(p.x, p.y, currentPigment);
+  if (!interacted) { interacted = true; hint.classList.add('hide'); }
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!pointerDown) return;
+  const p = toUV(e);
+  const dx = p.x - lastX, dy = p.y - lastY;
+  if (Math.abs(dx) + Math.abs(dy) > 0.0005) {
+    dragSplat(p.x, p.y, dx, dy, currentPigment);
+    lastX = p.x; lastY = p.y;
+  }
+});
+window.addEventListener('pointerup', () => { pointerDown = false; });
+
+// ---------- UI ----------
+const swatchBox = document.getElementById('swatches');
+PIGMENTS.forEach((pig, i) => {
+  const b = document.createElement('button');
+  b.className = 'swatch' + (i === 0 ? ' active' : '');
+  b.style.background = `radial-gradient(circle at 35% 30%, ${pig.hex}dd, ${pig.hex})`;
+  b.style.color = pig.hex;
+  b.innerHTML = `<span class="name">${pig.name}</span>`;
+  b.addEventListener('click', () => {
+    currentPigment = pig;
+    swatchBox.querySelectorAll('.swatch').forEach(el => el.classList.remove('active'));
+    b.classList.add('active');
+  });
+  swatchBox.appendChild(b);
+});
+document.getElementById('brush').addEventListener('input', e => {
+  brushSize = parseFloat(e.target.value);
+});
+// 画布材质：0 无纹理 / 1 宣纸 / 2 油画布
+let surfaceMode = parseInt(localStorage.getItem('inkwash_surface') || '0', 10);
+if (![0, 1, 2].includes(surfaceMode)) surfaceMode = 0;
+const segBtns = document.querySelectorAll('#surface button');
+function applySurfaceUI(m) {
+  surfaceMode = m;
+  try { localStorage.setItem('inkwash_surface', String(m)); } catch (e) {}
+  segBtns.forEach(b => b.classList.toggle('on', parseInt(b.dataset.s, 10) === m));
+}
+function setSurface(m) {
+  const mediumChanged = (surfaceMode === 2) !== (m === 2); // 水墨 ↔ 油画 属不同介质
+  applySurfaceUI(m);
+  if (mediumChanged) {
+    initFramebuffers(); // 换介质需换画布
+    showToast(m === 2 ? '已换油画布，重新起笔' : '已换水墨纸，重新起笔');
+  }
+}
+segBtns.forEach(b => b.addEventListener('click', () => {
+  const m = parseInt(b.dataset.s, 10);
+  if (m !== surfaceMode) setSurface(m);
+}));
+applySurfaceUI(surfaceMode);
+document.getElementById('clear').addEventListener('click', () => {
+  initFramebuffers();
+});
+
+// ---------- 存画 / 取画 / 照片 ----------
+const SAVE_KEY = 'inkwash_painting_v2';
+const SAVE_MAX = 1600;   // 存画快照最长边
+const ABSORB_MAX = 6.0;  // 吸光度编码上限
+
+const toast = document.getElementById('toast');
+let toastTimer = null;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+// 用 clearProgram(value=1) 作纹理拷贝/缩放
+function copyTo(targetFBO, sourceTexture) {
+  clearProgram.bind();
+  gl.uniform2f(clearProgram.uniforms.texelSize, 1 / targetFBO.width, 1 / targetFBO.height);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+  gl.uniform1i(clearProgram.uniforms.uTexture, 0);
+  gl.uniform1f(clearProgram.uniforms.value, 1.0);
+  blit(targetFBO);
+}
+
+// 存画：染料场缩放读出 → sqrt 编码为 PNG（低浓度精度更高）→ localStorage
+function saveState() {
+  try {
+    const scale = Math.min(1, SAVE_MAX / Math.max(dye.width, dye.height));
+    const w = Math.max(1, Math.round(dye.width * scale));
+    const h = Math.max(1, Math.round(dye.height * scale));
+    const tmp = createFBO(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    copyTo(tmp, dye.read.texture);
+    const pixels = new Float32Array(w * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, tmp.fbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, pixels);
+    gl.deleteFramebuffer(tmp.fbo);
+    gl.deleteTexture(tmp.texture);
+    // 上半：颜色三通道；下半：厚度通道（油画用），均 sqrt 编码
+    const enc = v => Math.sqrt(Math.min(v / ABSORB_MAX, 1)) * 255;
+    const c2d = document.createElement('canvas');
+    c2d.width = w; c2d.height = h * 2;
+    const ctx = c2d.getContext('2d');
+    const img = ctx.createImageData(w, h * 2);
+    const n = w * h;
+    for (let i = 0; i < n; i++) {
+      img.data[i * 4]     = enc(pixels[i * 4]);
+      img.data[i * 4 + 1] = enc(pixels[i * 4 + 1]);
+      img.data[i * 4 + 2] = enc(pixels[i * 4 + 2]);
+      img.data[i * 4 + 3] = 255;
+      const j = (n + i) * 4;
+      const av = enc(pixels[i * 4 + 3]);
+      img.data[j] = av; img.data[j + 1] = av; img.data[j + 2] = av; img.data[j + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ w, h, mode: surfaceMode, png: c2d.toDataURL('image/png'), t: Date.now() }));
+    showToast('画已藏入砚匣');
+  } catch (err) {
+    showToast('存画失败：浏览器存储空间不足');
+  }
+}
+
+// 取画：PNG 解码 → 还原吸光度 → 写回染料场（流场清零）
+function loadState() {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) { showToast('砚匣中尚无存画'); return; }
+  const { w, h, png, mode } = JSON.parse(raw);
+  const image = new Image();
+  image.onload = () => {
+    const c2d = document.createElement('canvas');
+    c2d.width = w; c2d.height = h * 2;
+    const ctx = c2d.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h * 2).data;
+    const dec = v => (v / 255) * (v / 255) * ABSORB_MAX;
+    const n = w * h;
+    const floats = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      floats[i * 4]     = dec(img[i * 4]);
+      floats[i * 4 + 1] = dec(img[i * 4 + 1]);
+      floats[i * 4 + 2] = dec(img[i * 4 + 2]);
+      floats[i * 4 + 3] = dec(img[(n + i) * 4]);
+    }
+    if (typeof mode === 'number') applySurfaceUI(mode); // 恢复该画作的介质
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, floats);
+    initFramebuffers();
+    copyTo(dye.write, tex);
+    dye.swap();
+    gl.deleteTexture(tex);
+    if (!interacted) { interacted = true; hint.classList.add('hide'); }
+    showToast('画已取出');
+  };
+  image.src = png;
+}
+
+// 照片：当前画面（含宣纸质感）导出为 PNG
+function exportPhoto() {
+  render();
+  canvas.toBlob(blob => {
+    if (!blob) { showToast('导出失败'); return; }
+    const d = new Date();
+    const pad = x => String(x).padStart(2, '0');
+    const a = document.createElement('a');
+    a.download = `水墨_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    showToast('照片已保存到下载');
+  }, 'image/png');
+}
+
+document.getElementById('save').addEventListener('click', saveState);
+document.getElementById('load').addEventListener('click', loadState);
+document.getElementById('photo').addEventListener('click', exportPhoto);
+
+// ---------- Loop ----------
+let lastTime = performance.now();
+function frame(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.0166);
+  lastTime = now;
+  step(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+
+// 开卷一点淡墨
+clickBloom(0.5, 0.55, PIGMENTS[0]);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
