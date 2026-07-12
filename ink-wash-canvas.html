@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b19</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b20</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -731,12 +731,43 @@ function brushStamp(x, y, dirx, diry, wScale, ink, seed, dark, layer) {
   gl.uniform1i(brushProgram.uniforms.uTarget, Lyr.read.attach(0));
   blit(Lyr.write); Lyr.swap();
 }
-// 尾段实时预览：缓冲中的笔尾每次移动即时显示，抬笔时才定形
+// 尾段形态参数：预览与抬笔定形共用同一数学 → 收锋零跳变
+// fill=0 行笔中（笔尾收作锋尖）；fill→1 静止按住（顿笔洇圆）
+function tailParam(q, S, L, fill, side) {
+  const f = Math.max((S - q.s) / L, 0);
+  const wT = Math.max(q.w * Math.pow(f, 1.6), q.w * 0.03);
+  const w = wT + (q.w - wT) * fill;
+  const rFull = Math.sqrt(correctRadius((brushSize * q.w) / 100));
+  const rNow  = Math.sqrt(correctRadius((brushSize * w) / 100));
+  const off = (rFull - rNow) * 0.45 * side * (1 - fill);
+  return { w, off };
+}
+function tailFill(idleMs) { return Math.min(Math.max((idleMs - 90) / 250, 0), 1); }
+function tailSide() {
+  const curv = Math.max(-8, Math.min(8, stroke.curv));
+  return Math.abs(curv) > 0.8 ? -Math.sign(curv) * 0.6 : 0.3;
+}
+// 尾段实时预览：每帧刷新，行笔时即显示收锋形态，静止时渐圆
 function renderTailPreview() {
   [previewLayer.read, previewLayer.write].forEach(clearFBOT);
   if (!stroke) return;
-  for (const q of stroke.tailPts)
-    brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed, undefined, previewLayer);
+  const aspect = canvas.width / canvas.height;
+  if (!stroke.tailPts.length) {
+    // 落笔未动：顿笔洇出的圆点，随按住时间微涨
+    const g = 0.75 + 0.25 * Math.min((performance.now() - stroke.t0) / 300, 1);
+    brushStamp(stroke.x, stroke.y, 1, 0, stroke.lastW * g, stroke.ink, stroke.seed, undefined, previewLayer);
+    return;
+  }
+  const pts = stroke.tailPts;
+  const S = stroke.travel;
+  const L = Math.max(S - pts[0].s, 1e-6);
+  const fill = tailFill(performance.now() - stroke.t);
+  const side = tailSide();
+  for (const q of pts) {
+    const tp = tailParam(q, S, L, fill, side);
+    brushStamp(q.x - q.dy * tp.off / aspect, q.y + q.dx * tp.off, q.dx, q.dy,
+               tp.w, q.ink, stroke.seed, undefined, previewLayer);
+  }
 }
 function startStroke(p, pressure) {
   stroke = {
@@ -806,7 +837,6 @@ function strokeTo(p, pressure, t) {
   }
   stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
   stroke.x = p.x; stroke.y = p.y;
-  renderTailPreview(); // 即时显示缓冲尾段，消除起笔延迟
 }
 function endStroke() {
   if (!stroke) return;
@@ -819,30 +849,23 @@ function endStroke() {
     // 极短促的微笔画：鼠标按键抖动产生的幻影笔触，弃墨不上纸
     dbg && dbg('END: micro-stroke discarded');
   } else if (stroke.tailPts.length) {
-    // 落下缓冲的尾段：快提按毛笔形态收锋；慢停顿收圆头
-    const fast = stroke.speed > 0.3 && performance.now() - stroke.t < 120;
-    dbg && dbg(`END: ${fast ? 'TAPER' : 'BLUNT'} spd=${stroke.speed.toFixed(2)} idle=${(performance.now() - stroke.t).toFixed(0)}ms tail=${stroke.tailPts.length} curv=${stroke.curv.toFixed(1)}`);
+    // 落下缓冲的尾段：与预览完全同一形态数学（fill 连续过渡），抬笔零跳变
+    const idle = performance.now() - stroke.t;
+    const fast = stroke.speed > 0.3 && idle < 120;
+    const fill = tailFill(idle); // 快提=0 收锋；停顿→1 顿收圆头；之间连续
+    dbg && dbg(`END: ${fast ? 'TAPER' : 'BLUNT'} spd=${stroke.speed.toFixed(2)} idle=${idle.toFixed(0)}ms fill=${fill.toFixed(2)} curv=${stroke.curv.toFixed(1)}`);
     const pts = stroke.tailPts;
     const S = stroke.travel;
     const L = Math.max(S - pts[0].s, 1e-6);
     const aspect = canvas.width / canvas.height;
-    // 毛笔形态：锋尖贴笔画一侧边缘收拢（弧线取内侧，直线微偏一侧），非对称圆锥
     const curv = Math.max(-8, Math.min(8, stroke.curv));
-    const side = Math.abs(curv) > 0.8 ? -Math.sign(curv) * 0.6 : 0.3; // 贴边收敛，幅度收敛更柔和
+    const side = tailSide();
     let endW = 0;
     for (const q of pts) {
-      if (fast) {
-        const f = Math.max((S - q.s) / L, 0);
-        // 饱满收敛（视觉≈0.8次，微凸有肚），锋腹留墨，末梢交给甩尾收尽
-        const w = Math.max(q.w * Math.pow(f, 1.6), q.w * 0.03);
-        endW = w;
-        const rFull = Math.sqrt(correctRadius((brushSize * q.w) / 100));
-        const rNow  = Math.sqrt(correctRadius((brushSize * w) / 100));
-        const off = (rFull - rNow) * 0.45 * side; // 微贴边，避免鲨鱼鳍
-        brushStamp(q.x - q.dy * off / aspect, q.y + q.dx * off, q.dx, q.dy, w, q.ink, stroke.seed);
-      } else {
-        brushStamp(q.x, q.y, q.dx, q.dy, q.w, q.ink, stroke.seed); // 顿收圆头
-      }
+      const tp = tailParam(q, S, L, fill, side);
+      endW = tp.w;
+      brushStamp(q.x - q.dy * tp.off / aspect, q.y + q.dx * tp.off, q.dx, q.dy,
+                 tp.w, q.ink, stroke.seed);
     }
     if (fast && endW > 0.008) {
       // 出锋甩尾：从收锋实际到达的贴边位置出发（无折角），弧线长甩、直线短收
@@ -1223,6 +1246,7 @@ function frame(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.0166);
   lastTime = now;
   if (!isBrush()) step(dt); // 毛笔模式：笔迹静止，不跑流体
+  else if (stroke) renderTailPreview(); // 每帧刷新笔尾预览（行笔收锋态/静止渐圆）
   render();
   requestAnimationFrame(frame);
 }
