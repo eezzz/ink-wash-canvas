@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b25</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b26</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -775,11 +775,11 @@ function startStroke(p, pressure) {
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
     speed: 0.2, t: performance.now(), t0: performance.now(),
-    moved: false, travel: 0, rampLen: 0, rampBase: 0.22, curv: 0, dotW: 0, headG: 0,
+    moved: false, travel: 0, rampLen: 0, rampBase: 0.04, curv: 0, dotW: 0, headG: 0,
     rawDx: 1, rawDy: 0
   };
-  // 锋尖着纸：接触面从笔尖一点开始（真实毛笔尖先触纸）
-  stroke.dotW = stroke.lastW * 0.22;
+  // 锋尖着纸：接触面从锋尖发丝级一点开始（视觉∝√宽度，0.02≈全宽14%）
+  stroke.dotW = stroke.lastW * 0.02;
   brushStamp(p.x, p.y, 0.707, -0.707, stroke.dotW, stroke.ink, stroke.seed);
 }
 function strokeTo(p, pressure, t) {
@@ -815,7 +815,7 @@ function strokeTo(p, pressure, t) {
   if (!stroke.moved) {
     stroke.moved = true;
     // 起笔宽度衔接按压程度：轻触即走=露锋尖入；按住铺毫再走=满幅起笔
-    stroke.rampBase = Math.min(Math.max(stroke.dotW / Math.max(stroke.lastW, 1e-4), 0.22), 1);
+    stroke.rampBase = Math.min(Math.max(stroke.dotW / Math.max(stroke.lastW, 1e-4), 0.04), 1);
     stroke.rampLen = rUV * (0.3 + 1.2 * Math.min(vNow, 1.2)) * (1 - stroke.rampBase * 0.7);
   }
   const spacing = Math.max(rUV * 0.12, 0.0004);
@@ -1224,11 +1224,11 @@ function frame(now) {
     if (g > stroke.headG + 0.04) {
       stroke.headG = g;
       const aspect = canvas.width / canvas.height;
-      const wFull = stroke.lastW * (0.22 + 0.78 * g);
+      const wFull = stroke.lastW * (0.02 + 0.98 * g);
       const rUV = Math.sqrt(correctRadius((brushSize * wFull) / 100));
       for (let i = 1; i <= 5; i++) {
         const t = i / 5;
-        const w = stroke.lastW * (0.22 + 0.78 * g * Math.pow(t, 0.7));
+        const w = stroke.lastW * (0.02 + 0.98 * g * Math.pow(t, 0.7));
         brushStamp(stroke.x + (0.6 / aspect) * rUV * g * t * 0.9,
                    stroke.y - 0.6 * rUV * g * t * 0.9,
                    0.707, -0.707, w, stroke.ink, stroke.seed);
