@@ -900,7 +900,7 @@ canvas.addEventListener('pointerdown', e => {
   if (isBrush()) startStroke(p, e.pressure);
   else clickBloom(p.x, p.y, currentPigment);
   if (!interacted) { interacted = true; hint.classList.add('hide'); }
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {} // 合成事件无真实指针
 });
 canvas.addEventListener('pointermove', e => {
   if (!pointerDown) return;
@@ -1244,6 +1244,47 @@ function frame(now) {
 // 开卷一点淡墨（晕染笔时）
 if (canvasMode === 'ink' && brushTool === 'bloom') clickBloom(0.5, 0.55, PIGMENTS[0]);
 requestAnimationFrame(frame);
+
+// ---------- 自测模式：?selftest 自动书写五个基本笔画（页面内合成事件，不占用系统鼠标） ----------
+if (location.search.includes('selftest')) {
+  (async () => {
+    applyMedium('ink', 'maobi');
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const fire = (target, type, fx, fy) => {
+      const r = canvas.getBoundingClientRect();
+      target.dispatchEvent(new PointerEvent(type, {
+        clientX: r.left + r.width * fx, clientY: r.top + r.height * fy,
+        pointerId: 1, pressure: 0.5, button: 0, buttons: 1, bubbles: true
+      }));
+    };
+    async function strokePath(pts, holdMs, endHoldMs) {
+      fire(canvas, 'pointerdown', pts[0][0], pts[0][1]);
+      await sleep(holdMs);
+      for (let i = 1; i < pts.length; i++) {
+        fire(canvas, 'pointermove', pts[i][0], pts[i][1]);
+        await sleep(pts[i][2] || 8);
+      }
+      if (endHoldMs) await sleep(endHoldMs);
+      fire(window, 'pointerup', pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      await sleep(500);
+    }
+    const P = (n, f) => Array.from({ length: n }, (_, i) => f((i + 1) / n));
+    await sleep(600);
+    // 点：按+微拖右下+快提
+    await strokePath([[0.22, 0.14], ...P(4, t => [0.22 + 0.02 * t, 0.14 + 0.045 * t, 22])], 240);
+    // 横：细入-行笔-末端微按后提
+    await strokePath([[0.16, 0.32], ...P(28, t => [0.16 + 0.2 * t, 0.32 - 0.012 * t, 9]),
+                      ...P(3, t => [0.36 + 0.006 * t, 0.308 + 0.014 * t, 16])], 60);
+    // 悬针竖：加速下行快提
+    await strokePath([[0.28, 0.46], ...P(24, t => { const u = t * t * 0.55 + t * 0.45; return [0.28, 0.46 + 0.4 * u, Math.max(3, 12 - 9 * t)]; })], 140);
+    // 撇：弧线加速快提
+    await strokePath([[0.5, 0.12], ...P(28, t => { const u = t * t * 0.7 + t * 0.3; return [0.5 - 0.11 * u, 0.12 + 0.42 * u * (1 + 0.25 * t), Math.max(3, 11 - 7 * t)]; })], 110);
+    // 捺：细入渐按（减速）至捺脚，向右快出锋
+    await strokePath([[0.56, 0.42], ...P(26, t => [0.56 + 0.13 * t, 0.42 + 0.31 * t, Math.round(5 + 11 * t)]),
+                      ...P(6, t => [0.69 + 0.08 * t, 0.732 + 0.006 * t, 5])], 40);
+    document.title = 'SELFTEST-DONE';
+  })();
+}
 </script>
 </body>
 </html>
