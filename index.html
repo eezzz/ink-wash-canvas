@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b22</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b23</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -750,17 +750,17 @@ function compositeStrokeLayer() {
 function advanceLiftTail(dt) {
   const a = liftTail;
   const aspect = canvas.width / canvas.height;
-  const T = 0.15; // 提笔相时长（秒）
+  const T = a.T; // 提笔相时长随抬笔速度
   while (dt > 0 && a.t < T) {
     const sub = Math.min(0.004, T - a.t, dt);
     dt -= sub; a.t += sub;
     const k = 1 - a.t / T;
-    const v = a.v0 * Math.pow(k, 1.2);   // 行进渐止
+    const v = a.v0 * Math.pow(k, 1.2);       // 行进渐止
     const ds = v * sub;
-    a.ang += a.curv * ds * 0.8;          // 顺近段曲率写出弧锋
+    a.ang += a.curv * ds * 0.8 * k;          // 弧度随锋离纸渐直
     a.x += Math.cos(a.ang) * ds / aspect;
     a.y += Math.sin(a.ang) * ds;
-    const w = a.W * Math.pow(k, 2.8);    // 笔压渐提（视觉≈1.4次收敛）
+    const w = a.W * Math.pow(k, a.p);        // 收细速率随抬笔速度：快提针状、慢提丰圆
     if (w < 0.01) { a.t = T; break; }
     brushStamp(a.x, a.y, Math.cos(a.ang), Math.sin(a.ang), w, a.ink, a.seed);
   }
@@ -775,11 +775,11 @@ function startStroke(p, pressure) {
     dirX: 1, dirY: 0,
     lastW: pressureW(pressure) * 0.85,
     speed: 0.2, t: performance.now(), t0: performance.now(),
-    moved: false, travel: 0, rampLen: 0, curv: 0, dotW: 0
+    moved: false, travel: 0, rampLen: 0, rampBase: 0.22, curv: 0, dotW: 0, headG: 0
   };
-  // 锋尖着纸：即刻落一小点；按住不动则由帧循环洇大（顿笔蓄墨）
-  stroke.dotW = stroke.lastW * 0.3;
-  brushStamp(p.x, p.y, 1, 0, stroke.dotW, stroke.ink, stroke.seed);
+  // 锋尖着纸：接触面从笔尖一点开始（真实毛笔尖先触纸）
+  stroke.dotW = stroke.lastW * 0.22;
+  brushStamp(p.x, p.y, 0.707, -0.707, stroke.dotW, stroke.ink, stroke.seed);
 }
 function strokeTo(p, pressure, t) {
   if (!stroke) return;
@@ -810,8 +810,9 @@ function strokeTo(p, pressure, t) {
   const rUV = Math.sqrt(correctRadius((brushSize * wEnd) / 100));
   if (!stroke.moved) {
     stroke.moved = true;
-    // 起笔快 → 露锋尖入；起笔慢 → 近乎藏锋。铺毫要快，起笔饱满有力
-    stroke.rampLen = rUV * (0.3 + 1.2 * Math.min(vNow, 1.2));
+    // 起笔宽度衔接按压程度：轻触即走=露锋尖入；按住铺毫再走=满幅起笔
+    stroke.rampBase = Math.min(Math.max(stroke.dotW / Math.max(stroke.lastW, 1e-4), 0.22), 1);
+    stroke.rampLen = rUV * (0.3 + 1.2 * Math.min(vNow, 1.2)) * (1 - stroke.rampBase * 0.7);
   }
   const spacing = Math.max(rUV * 0.12, 0.0004);
   const steps = Math.min(Math.ceil(dist / spacing), 200);
@@ -824,7 +825,8 @@ function strokeTo(p, pressure, t) {
     stroke.travel += dist / steps;
     stroke.ink = Math.max(stroke.ink - (dist / steps) * deplete, 0.22);
     const ramp = stroke.rampLen > 0 ? Math.min(stroke.travel / stroke.rampLen, 1) : 1;
-    const wi = (wStart + (wEnd - wStart) * tt) * Math.pow(0.25 + 0.75 * ramp, 2); // 露锋尖入（平方补偿视觉 sqrt）
+    const wi = (wStart + (wEnd - wStart) * tt) *
+               Math.pow(stroke.rampBase + (1 - stroke.rampBase) * ramp, 2); // 从按压宽度起笔（平方补偿视觉 sqrt）
     brushStamp(sx, sy, sdx, sdy, wi, stroke.ink, stroke.seed); // 即写即落墨，零延迟
   }
   stroke.dirX = sdx; stroke.dirY = sdy; stroke.lastW = wEnd;
@@ -839,11 +841,14 @@ function endStroke() {
   // 提笔相：以抬笔瞬间的笔势/笔宽/曲率启动"边走边提"的出锋物理
   const idleMs = performance.now() - stroke.t;
   const v0 = idleMs > 150 ? 0 : Math.min(stroke.speed, 1.6); // 停顿后抬笔 = 原地提锋（顿收）
+  const s = v0 / 1.6; // 归一化抬笔速度
   dbg && dbg(`END: lift v0=${v0.toFixed(2)} w=${stroke.lastW.toFixed(2)} curv=${stroke.curv.toFixed(1)}`);
   liftTail = {
     x: stroke.x, y: stroke.y,
     ang: Math.atan2(stroke.dirY, stroke.dirX),
     v0, W: stroke.lastW,
+    T: 0.09 + 0.07 * s,       // 快提锋长，慢提锋短
+    p: 2.0 + 1.4 * s,         // 快提细长针状，慢提丰圆短收
     curv: Math.max(-8, Math.min(8, stroke.curv)),
     ink: stroke.ink, seed: stroke.seed, t: 0
   };
@@ -1200,12 +1205,21 @@ function frame(now) {
   lastTime = now;
   if (!isBrush()) step(dt); // 毛笔模式：笔迹静止，不跑流体
   else if (stroke && !stroke.moved) {
-    // 顿笔蓄墨：按住不动，墨点缓涨
+    // 顿笔铺毫：压力渐增，笔腹沿笔杆斜向（45°切入）从锋尖铺开，锋角留在着纸点
     const g = Math.min((performance.now() - stroke.t0) / 600, 1);
-    const w = stroke.lastW * (0.3 + 0.7 * g);
-    if (w > stroke.dotW + 0.02) {
-      stroke.dotW = w;
-      brushStamp(stroke.x, stroke.y, 1, 0, w, stroke.ink, stroke.seed);
+    if (g > stroke.headG + 0.04) {
+      stroke.headG = g;
+      const aspect = canvas.width / canvas.height;
+      const wFull = stroke.lastW * (0.22 + 0.78 * g);
+      const rUV = Math.sqrt(correctRadius((brushSize * wFull) / 100));
+      for (let i = 1; i <= 5; i++) {
+        const t = i / 5;
+        const w = stroke.lastW * (0.22 + 0.78 * g * Math.pow(t, 0.7));
+        brushStamp(stroke.x + (0.6 / aspect) * rUV * g * t * 0.9,
+                   stroke.y - 0.6 * rUV * g * t * 0.9,
+                   0.707, -0.707, w, stroke.ink, stroke.seed);
+      }
+      stroke.dotW = wFull;
     }
   }
   else if (liftTail) advanceLiftTail(dt); // 收笔中：边走边提写出锋
