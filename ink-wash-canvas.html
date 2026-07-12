@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b30</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b31</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -156,6 +156,7 @@ const config = {
 
 // ---------- 颜料（国画色） ----------
 const PIGMENTS = [
+  { name: '钛白', hex: '#fafaf7' },
   { name: '墨',   hex: '#17171b' },
   { name: '花青', hex: '#1d5c77' },
   { name: '石青', hex: '#2e5a9e' },
@@ -171,7 +172,7 @@ function hexToAbsorb(hex) {
   const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
   return { r: 1 - r, g: 1 - g, b: 1 - b }; // 吸光度 = 1 - 反射色
 }
-let currentPigment = PIGMENTS[0];
+let currentPigment = PIGMENTS[1]; // 默认选墨
 let brushSize = 0.22;
 
 // ---------- Shaders ----------
@@ -625,7 +626,7 @@ function step(dt) {
   gl.uniform2f(vorticityProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
   gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
   gl.uniform1i(vorticityProgram.uniforms.uCurl, curl.attach(1));
-  gl.uniform1f(vorticityProgram.uniforms.curl, isOil() ? 3 : config.CURL);
+  gl.uniform1f(vorticityProgram.uniforms.curl, isOil() ? 0 : config.CURL); // 油彩无涡旋
   gl.uniform1f(vorticityProgram.uniforms.dt, dt);
   blit(velocity.write); velocity.swap();
 
@@ -660,7 +661,7 @@ function step(dt) {
   gl.uniform1i(advectionProgram.uniforms.uSource, velocity.read.attach(0));
   gl.uniform1f(advectionProgram.uniforms.dt, dt);
   // 油画：颜料黏稠，笔势即停不流动；水墨：水润流淌
-  gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 4.5 : config.VELOCITY_DISSIPATION);
+  gl.uniform1f(advectionProgram.uniforms.dissipation, isOil() ? 9.0 : config.VELOCITY_DISSIPATION); // 高黏稠：离笔即停
   blit(velocity.write); velocity.swap();
 
   gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
@@ -712,7 +713,7 @@ function oilPaint(hex, amt) { // 预乘颜色 + 厚度
   return { r: c.r * amt, g: c.g * amt, b: c.b * amt, a: amt };
 }
 const isOil = () => canvasMode === 'oil';
-const OIL_FORCE = 2600;
+const OIL_FORCE = 1800; // 黏稠颜料推挤力
 function inkAmt() { return 0.35 + 0.85 * inkConc; } // 浓淡 → 颜料量
 
 // —— 油画笔：鬃毛条纹厚涂 + 湿料推挤 + 提笔堆脊 ——
@@ -1024,7 +1025,7 @@ window.addEventListener('pointercancel', () => {
 const swatchBox = document.getElementById('swatches');
 PIGMENTS.forEach((pig, i) => {
   const b = document.createElement('button');
-  b.className = 'swatch' + (i === 0 ? ' active' : '');
+  b.className = 'swatch' + (i === 1 ? ' active' : '');
   b.style.background = `radial-gradient(circle at 35% 30%, ${pig.hex}dd, ${pig.hex})`;
   b.style.color = pig.hex;
   b.innerHTML = `<span class="name">${pig.name}</span>`;
@@ -1330,7 +1331,7 @@ function frame(now) {
 }
 
 // 开卷一点淡墨（晕染笔时）
-if (canvasMode === 'ink' && brushTool === 'bloom') clickBloom(0.5, 0.55, PIGMENTS[0]);
+if (canvasMode === 'ink' && brushTool === 'bloom') clickBloom(0.5, 0.55, PIGMENTS[1]);
 requestAnimationFrame(frame);
 
 // ---------- 自测模式：?selftest 自动书写五个基本笔画（页面内合成事件，不占用系统鼠标） ----------
@@ -1361,17 +1362,17 @@ if (location.search.includes('selftest')) {
     await sleep(600);
     if (stOil) {
       // 油画：三色平行笔触 → 一笔横穿拖混 → 两个厚涂点
-      currentPigment = PIGMENTS[2]; // 石青
+      currentPigment = PIGMENTS[3]; // 石青
       await strokePath([[0.2, 0.25], ...P(26, t => [0.2 + 0.28 * t, 0.25, 9])], 60);
-      currentPigment = PIGMENTS[4]; // 藤黄
+      currentPigment = PIGMENTS[5]; // 藤黄
       await strokePath([[0.2, 0.35], ...P(26, t => [0.2 + 0.28 * t, 0.35, 9])], 60);
-      currentPigment = PIGMENTS[5]; // 朱砂
+      currentPigment = PIGMENTS[6]; // 朱砂
       await strokePath([[0.2, 0.45], ...P(26, t => [0.2 + 0.28 * t, 0.45, 9])], 60);
-      currentPigment = PIGMENTS[3]; // 石绿：竖穿三色拖混
+      currentPigment = PIGMENTS[0]; // 钛白：竖穿三色拖混提亮
       await strokePath([[0.34, 0.15], ...P(30, t => [0.34, 0.15 + 0.42 * t, 10])], 60);
-      currentPigment = PIGMENTS[6]; // 胭脂：厚涂点
+      currentPigment = PIGMENTS[7]; // 胭脂：厚涂点
       await strokePath([[0.58, 0.3], ...P(3, t => [0.58 + 0.008 * t, 0.3 + 0.006 * t, 20])], 300);
-      currentPigment = PIGMENTS[0];
+      currentPigment = PIGMENTS[1];
       await strokePath([[0.62, 0.42], ...P(3, t => [0.62 + 0.008 * t, 0.42 + 0.006 * t, 20])], 300);
       document.title = 'SELFTEST-DONE';
       return;
