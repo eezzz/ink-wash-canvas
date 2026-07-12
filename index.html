@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b31</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b32</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -290,6 +290,7 @@ uniform vec2 point;
 uniform float radius;
 uniform vec2 dir;
 uniform float seed;
+uniform float cover;   // 遮盖率：浓稠颜料把底色刮走替换，稀薄则罩染混色
 float hash (vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
   p += dot(p, p + 45.32);
@@ -318,7 +319,9 @@ void main () {
   // 破碎边缘：颜料在边缘被撕开（收敛到边缘附近）
   float tear = smoothstep(0.22, 0.62, b1 + core);
   float m = core * tear * ridges;
-  fragColor = texture(uTarget, vUv) + color * m;
+  vec4 base = texture(uTarget, vUv);
+  float k = clamp(m * cover, 0.0, 0.95); // 覆盖式合成：厚涂遮底，薄涂罩染
+  fragColor = base * (1.0 - k) + color * m;
 }`);
 
 // 抬笔时：笔画层按颜色合入染料场
@@ -491,7 +494,7 @@ void main () {
     vec4 dyeS = texture(uDye, vUv);
     float amt = dyeS.a;
     vec3 paint = clamp(dyeS.rgb / max(amt, 1e-4), 0.0, 1.0);
-    float coverage = 1.0 - exp(-amt * 2.4);
+    float coverage = 1.0 - exp(-amt * 3.2);
     // 素净画布底：极淡的宽纹理，不干扰画面
     float nz = vnoise(px * 0.04);
     float weave = vnoise(vec2(px.x * 0.11, px.y * 0.023)) * 0.5
@@ -726,6 +729,7 @@ function oilStamp(x, y, dirx, diry, wScale, amt) {
   gl.uniform1f(oilStampProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
   gl.uniform2f(oilStampProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(oilStampProgram.uniforms.seed, oilSeed);
+  gl.uniform1f(oilStampProgram.uniforms.cover, 0.25 + 0.6 * inkConc); // 最浓时近乎全遮盖
   const c = hexToRGB(currentPigment.hex);
   gl.uniform4f(oilStampProgram.uniforms.color, c.r * amt, c.g * amt, c.b * amt, amt);
   gl.uniform1i(oilStampProgram.uniforms.uTarget, dye.read.attach(0));
@@ -734,7 +738,7 @@ function oilStamp(x, y, dirx, diry, wScale, amt) {
 function oilDab(x, y) {
   oilSeed = Math.random() * 100;
   oilPrev = { x, y, dx: 1, dy: 0 };
-  const a = 0.5 * inkAmt();
+  const a = 0.4 + 0.8 * inkConc;
   oilStamp(x, y, 1, 0, 1.1, a);
   oilStamp(x + 0.004, y - 0.003, 0.96, -0.28, 0.8, a * 0.6);
 }
@@ -748,7 +752,7 @@ function oilDragTo(x, y, dx, dy) {
   const rUV = Math.sqrt(correctRadius(brushSize / 100));
   const spacing = Math.max(rUV * 0.3, 0.002);
   const steps = Math.min(Math.ceil(dist / spacing), 60);
-  const amt = 0.09 * inkAmt();
+  const amt = 0.08 + 0.22 * inkConc; // 浓时厚铺速涨到不透明
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     oilStamp(oilPrev.x + (x - oilPrev.x) * t, oilPrev.y + (y - oilPrev.y) * t, ddx, ddy, 1.0, amt);
@@ -760,7 +764,7 @@ function oilDragTo(x, y, dx, dy) {
 function oilLift() {
   if (!oilPrev) return;
   // 提笔堆脊：笔离开处颜料堆起一道棱
-  oilStamp(oilPrev.x, oilPrev.y, oilPrev.dx, oilPrev.dy, 0.75, 0.3 * inkAmt());
+  oilStamp(oilPrev.x, oilPrev.y, oilPrev.dx, oilPrev.dy, 0.75, 0.22 + 0.4 * inkConc);
   oilPrev = null;
 }
 
@@ -797,7 +801,7 @@ const STROKE_ABSORB = 0.9;
 let stroke = null;
 function strokeInkColor() { // 浓淡 → 墨色深浅
   const ab = hexToAbsorb(currentPigment.hex);
-  const s = STROKE_ABSORB * (0.25 + 0.75 * inkConc);
+  const s = STROKE_ABSORB * (0.2 + 0.95 * inkConc); // 最浓档为实墨
   return { r: ab.r * s, g: ab.g * s, b: ab.b * s };
 }
 function pressureW(pr) { const v = (pr && pr > 0) ? pr : 0.5; return 0.4 + 1.2 * v; }
