@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b28</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b29</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -276,6 +276,48 @@ void main () {
   float v = max(core * mask, halo * 0.28) * darkness;
   float base = texture(uTarget, vUv).r;
   fragColor = vec4(max(base, v), 0.0, 0.0, 1.0);
+}`);
+
+// 油画笔触：扁头拉长轮廓 + 鬃毛沟槽厚度纹 + 破碎边缘（直接写入颜料场）
+const oilStampProgram = new Program(`#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTarget;
+uniform float aspectRatio;
+uniform vec4 color;
+uniform vec2 point;
+uniform float radius;
+uniform vec2 dir;
+uniform float seed;
+float hash (vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise (vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+void main () {
+  vec2 p = vUv - point;
+  p.x *= aspectRatio;
+  float r = sqrt(radius);
+  vec2 perp = vec2(-dir.y, dir.x);
+  float across = dot(p, perp) / r;
+  float along  = dot(p, dir) / r;
+  // 扁头笔：沿笔向拉长的轮廓
+  float dEl = length(vec2(along * 0.7, across));
+  float core = 1.0 - smoothstep(0.7, 1.0, dEl);
+  // 鬃毛沟槽：厚度横向起伏成平行棱线
+  float b1 = vnoise(vec2(across * 6.0 + seed, seed * 3.7));
+  float b2 = vnoise(vec2(across * 14.0 + seed * 7.3, along * 0.4 + seed));
+  float ridges = 0.45 + 1.1 * (b1 * 0.65 + b2 * 0.35);
+  // 破碎边缘：颜料在边缘被撕开
+  float tear = smoothstep(0.35, 0.75, b1 + core);
+  float m = core * tear * ridges;
+  fragColor = texture(uTarget, vUv) + color * m;
 }`);
 
 // 抬笔时：笔画层按颜色合入染料场
@@ -460,13 +502,13 @@ void main () {
     float hR = texture(uDye, vR).a;
     float hT = texture(uDye, vT).a;
     float hB = texture(uDye, vB).a;
-    vec2 slope = vec2(hR - hL, hT - hB) * 4.0;
+    vec2 slope = vec2(hR - hL, hT - hB) * 6.5;
     vec3 n = normalize(vec3(-slope, 1.0));
     vec3 lightDir = normalize(vec3(-0.35, 0.45, 0.82));
     float diff = max(dot(n, lightDir), 0.0);
-    col *= 0.72 + 0.38 * diff;
+    col *= 0.68 + 0.42 * diff;
     vec3 hv = normalize(lightDir + vec3(0.0, 0.0, 1.0));
-    float spec = pow(max(dot(n, hv), 0.0), 32.0) * coverage * 0.55;
+    float spec = pow(max(dot(n, hv), 0.0), 32.0) * coverage * 0.8;
     col += spec;
   }
   // 淡淡晕影
@@ -673,15 +715,58 @@ const isOil = () => canvasMode === 'oil';
 const OIL_FORCE = 2600;
 function inkAmt() { return 0.35 + 0.85 * inkConc; } // 浓淡 → 颜料量
 
+// —— 油画笔：鬃毛条纹厚涂 + 湿料推挤 + 提笔堆脊 ——
+let oilSeed = 0, oilPrev = null;
+function oilStamp(x, y, dirx, diry, wScale, amt) {
+  oilStampProgram.bind();
+  gl.uniform2f(oilStampProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
+  gl.uniform1f(oilStampProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+  gl.uniform2f(oilStampProgram.uniforms.point, x, y);
+  gl.uniform1f(oilStampProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
+  gl.uniform2f(oilStampProgram.uniforms.dir, dirx, diry);
+  gl.uniform1f(oilStampProgram.uniforms.seed, oilSeed);
+  const c = hexToRGB(currentPigment.hex);
+  gl.uniform4f(oilStampProgram.uniforms.color, c.r * amt, c.g * amt, c.b * amt, amt);
+  gl.uniform1i(oilStampProgram.uniforms.uTarget, dye.read.attach(0));
+  blit(dye.write); dye.swap();
+}
+function oilDab(x, y) {
+  oilSeed = Math.random() * 100;
+  oilPrev = { x, y, dx: 1, dy: 0 };
+  const a = 0.5 * inkAmt();
+  oilStamp(x, y, 1, 0, 1.1, a);
+  oilStamp(x + 0.004, y - 0.003, 0.96, -0.28, 0.8, a * 0.6);
+}
+function oilDragTo(x, y, dx, dy) {
+  if (!oilPrev) { oilDab(x, y); return; }
+  const aspect = canvas.width / canvas.height;
+  let ddx = (x - oilPrev.x) * aspect, ddy = y - oilPrev.y;
+  const dist = Math.hypot(ddx, ddy);
+  if (dist < 0.0005) return;
+  ddx /= dist; ddy /= dist;
+  const rUV = Math.sqrt(correctRadius(brushSize / 100));
+  const spacing = Math.max(rUV * 0.3, 0.002);
+  const steps = Math.min(Math.ceil(dist / spacing), 60);
+  const amt = 0.09 * inkAmt();
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    oilStamp(oilPrev.x + (x - oilPrev.x) * t, oilPrev.y + (y - oilPrev.y) * t, ddx, ddy, 1.0, amt);
+  }
+  oilPrev = { x, y, dx: ddx, dy: ddy };
+  // 推开已有湿颜料（涂抹混色，只注入流场不注色）
+  splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, { r: 0, g: 0, b: 0, a: 0 }, 1.0);
+}
+function oilLift() {
+  if (!oilPrev) return;
+  // 提笔堆脊：笔离开处颜料堆起一道棱
+  oilStamp(oilPrev.x, oilPrev.y, oilPrev.dx, oilPrev.dy, 0.75, 0.3 * inkAmt());
+  oilPrev = null;
+}
+
 // 点染：水墨 = 墨晕绽开；油画 = 不透明厚涂色块
 function clickBloom(x, y, pigment) {
   if (isOil()) {
-    splat(x, y, 0, 0, oilPaint(pigment.hex, 0.9 * inkAmt()), 1.5);
-    for (let i = 0; i < 5; i++) {
-      const ang = Math.random() * Math.PI * 2, rr = Math.random() * 0.006;
-      splat(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr, 0, 0,
-        oilPaint(pigment.hex, (0.3 + Math.random() * 0.5) * inkAmt()), 0.4 + Math.random() * 0.6);
-    }
+    oilDab(x, y);
     return;
   }
   const a = hexToAbsorb(pigment.hex);
@@ -698,7 +783,7 @@ function clickBloom(x, y, pigment) {
 // 拖染：水墨 = 注墨随水流；油画 = 铺颜料 + 抹开已有颜料
 function dragSplat(x, y, dx, dy, pigment) {
   if (isOil()) {
-    splat(x, y, dx * OIL_FORCE, dy * OIL_FORCE, oilPaint(pigment.hex, 0.35 * inkAmt()), 1.0);
+    oilDragTo(x, y, dx, dy);
     return;
   }
   const a = hexToAbsorb(pigment.hex);
@@ -926,7 +1011,9 @@ canvas.addEventListener('pointermove', e => {
 });
 window.addEventListener('pointerup', e => {
   dbg && dbg(`UP t=${performance.now().toFixed(0)} xy=${e.clientX},${e.clientY}`);
-  pointerDown = false; lastUpT = performance.now(); endStroke();
+  pointerDown = false; lastUpT = performance.now();
+  if (isOil()) oilLift();
+  endStroke();
 });
 window.addEventListener('pointercancel', () => {
   dbg && dbg('CANCEL');
@@ -1249,7 +1336,8 @@ requestAnimationFrame(frame);
 // ---------- 自测模式：?selftest 自动书写五个基本笔画（页面内合成事件，不占用系统鼠标） ----------
 if (location.search.includes('selftest')) {
   (async () => {
-    applyMedium('ink', 'maobi');
+    const stOil = location.search.includes('selftest=oil');
+    applyMedium(stOil ? 'oil' : 'ink', stOil ? 'oilbrush' : 'maobi');
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     const fire = (target, type, fx, fy) => {
       const r = canvas.getBoundingClientRect();
@@ -1271,6 +1359,23 @@ if (location.search.includes('selftest')) {
     }
     const P = (n, f) => Array.from({ length: n }, (_, i) => f((i + 1) / n));
     await sleep(600);
+    if (stOil) {
+      // 油画：三色平行笔触 → 一笔横穿拖混 → 两个厚涂点
+      currentPigment = PIGMENTS[2]; // 石青
+      await strokePath([[0.2, 0.25], ...P(26, t => [0.2 + 0.28 * t, 0.25, 9])], 60);
+      currentPigment = PIGMENTS[4]; // 藤黄
+      await strokePath([[0.2, 0.35], ...P(26, t => [0.2 + 0.28 * t, 0.35, 9])], 60);
+      currentPigment = PIGMENTS[5]; // 朱砂
+      await strokePath([[0.2, 0.45], ...P(26, t => [0.2 + 0.28 * t, 0.45, 9])], 60);
+      currentPigment = PIGMENTS[3]; // 石绿：竖穿三色拖混
+      await strokePath([[0.34, 0.15], ...P(30, t => [0.34, 0.15 + 0.42 * t, 10])], 60);
+      currentPigment = PIGMENTS[6]; // 胭脂：厚涂点
+      await strokePath([[0.58, 0.3], ...P(3, t => [0.58 + 0.008 * t, 0.3 + 0.006 * t, 20])], 300);
+      currentPigment = PIGMENTS[0];
+      await strokePath([[0.62, 0.42], ...P(3, t => [0.62 + 0.008 * t, 0.42 + 0.006 * t, 20])], 300);
+      document.title = 'SELFTEST-DONE';
+      return;
+    }
     // 点：按+微拖右下+快提
     await strokePath([[0.22, 0.14], ...P(4, t => [0.22 + 0.02 * t, 0.14 + 0.045 * t, 22])], 240);
     // 横：细入-行笔-末端微按后提
