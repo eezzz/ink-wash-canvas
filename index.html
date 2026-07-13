@@ -34,6 +34,18 @@
     box-shadow: 0 6px 24px rgba(50, 45, 35, 0.18), inset 0 0 0 1px rgba(255,255,255,.5);
     font-family: "Kaiti SC", "KaiTi", "STKaiti", serif;
     max-width: 94vw;
+    transition: transform .3s ease, opacity .3s ease;
+  }
+  .panel.hidden { transform: translate(-50%, 140%); opacity: 0; pointer-events: none; }
+  .panel-toggle {
+    position: fixed; right: 12px; bottom: 12px; z-index: 10;
+    width: 46px; height: 46px; border-radius: 50%;
+    border: 1px solid rgba(40,38,34,.3);
+    background: rgba(250, 247, 240, 0.88);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font-family: "Kaiti SC", "KaiTi", "STKaiti", serif; font-size: 16px;
+    color: rgba(40,38,34,.75); cursor: pointer;
+    box-shadow: 0 4px 14px rgba(50,45,35,.22);
   }
   .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
   .ctl { display: flex; align-items: center; gap: 6px; font-size: 13px; letter-spacing: 2px; color: rgba(40,38,34,.65); white-space: nowrap; }
@@ -100,9 +112,9 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b38</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b39</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
-<div class="panel">
+<div class="panel" id="panel">
   <div class="row swatches" id="swatches"></div>
   <div class="row">
     <label class="ctl">渲染 <select id="canvasSel">
@@ -127,6 +139,7 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<button class="panel-toggle" id="panelToggle" title="收起/展开控制面板">藏</button>
 <div class="err" id="err">很抱歉，您的浏览器不支持 WebGL2 浮点渲染，无法运行水墨模拟。<br>请使用最新版 Chrome / Edge / Firefox / Safari。</div>
 
 <script>
@@ -1110,6 +1123,18 @@ brushSel.addEventListener('change', () => {
   if (brushTool === 'maobi') showToast('毛笔：慢按快提见浓淡，抬笔快出锋、停顿则顿收');
 });
 applyMedium(canvasMode, brushTool);
+
+// —— 面板收起/展开：手机上腾出画布空间 ——
+const panelEl = document.getElementById('panel');
+const panelToggle = document.getElementById('panelToggle');
+function setPanelHidden(hidden) {
+  panelEl.classList.toggle('hidden', hidden);
+  panelToggle.textContent = hidden ? '盘' : '藏';
+  try { localStorage.setItem('inkwash_panel_hidden', hidden ? '1' : '0'); } catch (e) {}
+}
+panelToggle.addEventListener('click', () => setPanelHidden(!panelEl.classList.contains('hidden')));
+const phPref = (() => { try { return localStorage.getItem('inkwash_panel_hidden'); } catch (e) { return null; } })();
+setPanelHidden(phPref === null ? (window.innerWidth < 700) : phPref === '1'); // 小屏首次默认收起
 
 // —— 撤销 / 重做（GPU 半分辨率快照池，8 步） ——
 var undoPool, undoStack, redoStack;
