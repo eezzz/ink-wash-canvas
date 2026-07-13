@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b37</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b38</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -1199,8 +1199,44 @@ document.getElementById('clear').addEventListener('click', () => {
 });
 
 // ---------- 存画 / 取画 / 照片 ----------
-const SAVE_KEY = 'inkwash_painting_v3';
-const SAVE_MAX = 1600;   // 存画快照最长边
+const SAVE_KEY = 'inkwash_painting_v3'; // 旧 localStorage 存画（仅兼容读取）
+const SAVE_MAX = 2048;   // 存画快照最长边（油画质感需要更高分辨率）
+
+// IndexedDB 存画：无 5MB 配额限制——油画鬃毛纹理 PNG 压缩差，localStorage 会静默超额失败
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('inkwash', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('paintings');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbPut(val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('paintings', 'readwrite');
+    tx.objectStore('paintings').put(val, 'current');
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet() {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction('paintings').objectStore('paintings').get('current');
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbDelete() {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('paintings', 'readwrite');
+    tx.objectStore('paintings').delete('current');
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
 const ABSORB_MAX = 6.0;  // 吸光度编码上限
 
 const toast = document.getElementById('toast');
@@ -1254,18 +1290,34 @@ function saveState() {
       img.data[j] = av; img.data[j + 1] = av; img.data[j + 2] = av; img.data[j + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ w, h, mode: { c: canvasMode, b: brushTool }, png: c2d.toDataURL('image/png'), t: Date.now() }));
-    showToast('画已藏入砚匣');
+    c2d.toBlob(async blob => {
+      if (!blob) { showToast('存画失败'); return; }
+      try {
+        await idbPut({ w, h, mode: { c: canvasMode, b: brushTool }, blob, t: Date.now() });
+        showToast('画已藏入砚匣');
+      } catch (e) {
+        showToast('存画失败：' + (e && e.name ? e.name : '未知错误'));
+      }
+    }, 'image/png');
   } catch (err) {
-    showToast('存画失败：浏览器存储空间不足');
+    showToast('存画失败');
   }
 }
 
 // 取画：PNG 解码 → 还原吸光度 → 写回染料场（流场清零）
-function loadState() {
-  const raw = localStorage.getItem(SAVE_KEY);
-  if (!raw) { showToast('砚匣中尚无存画'); return; }
-  const { w, h, png, mode } = JSON.parse(raw);
+async function loadState() {
+  finishLiftNow();
+  let w, h, png, mode, fromIdb = false;
+  const rec = await idbGet().catch(() => null);
+  if (rec) {
+    w = rec.w; h = rec.h; mode = rec.mode;
+    png = URL.createObjectURL(rec.blob); fromIdb = true;
+  } else {
+    const raw = localStorage.getItem(SAVE_KEY); // 兼容旧 localStorage 存画
+    if (!raw) { showToast('砚匣中尚无存画'); return; }
+    const o = JSON.parse(raw);
+    w = o.w; h = o.h; png = o.png; mode = o.mode;
+  }
   const image = new Image();
   image.onload = () => {
     const c2d = document.createElement('canvas');
@@ -1296,6 +1348,7 @@ function loadState() {
     copyTo(dye.write, tex);
     dye.swap();
     gl.deleteTexture(tex);
+    if (fromIdb) URL.revokeObjectURL(png);
     if (!interacted) { interacted = true; hint.classList.add('hide'); }
     showToast('画已取出');
   };
@@ -1359,8 +1412,9 @@ requestAnimationFrame(frame);
 // ---------- 自测模式：?selftest 自动书写五个基本笔画（页面内合成事件，不占用系统鼠标） ----------
 if (location.search.includes('selftest')) {
   (async () => {
-    const stOil = location.search.includes('selftest=oil');
-    applyMedium(stOil ? 'oil' : 'ink', stOil ? 'oilbrush' : 'maobi');
+    const stOilSave = location.search.includes('selftest=oilsave');
+    const stOil = !stOilSave && location.search.includes('selftest=oil');
+    applyMedium((stOil || stOilSave) ? 'oil' : 'ink', (stOil || stOilSave) ? 'oilbrush' : 'maobi');
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     const fire = (target, type, fx, fy) => {
       const r = canvas.getBoundingClientRect();
@@ -1382,6 +1436,23 @@ if (location.search.includes('selftest')) {
     }
     const P = (n, f) => Array.from({ length: n }, (_, i) => f((i + 1) / n));
     await sleep(600);
+    if (stOilSave) {
+      // 存取回环：画 → 存 → 清 → 取，验证油画序列化正确性（自动备份/恢复用户存画）
+      currentPigment = PIGMENTS[3];
+      await strokePath([[0.2, 0.25], ...P(26, t => [0.2 + 0.28 * t, 0.25, 9])], 60);
+      currentPigment = PIGMENTS[5];
+      await strokePath([[0.2, 0.38], ...P(26, t => [0.2 + 0.28 * t, 0.38, 9])], 60);
+      oilVisc = 0.9;
+      currentPigment = PIGMENTS[0]; // 钛白厚涂点
+      await strokePath([[0.58, 0.3], ...P(3, t => [0.58 + 0.008 * t, 0.3 + 0.006 * t, 20])], 300);
+      const bak = await idbGet().catch(() => null);
+      saveState(); await sleep(1500);          // toBlob + idb 异步落库
+      clearCanvasOnly(); await sleep(300);
+      loadState(); await sleep(3000);
+      try { if (bak) await idbPut(bak); else await idbDelete(); } catch (e) {}
+      document.title = 'SELFTEST-DONE';
+      return;
+    }
     if (stOil) {
       // 油画：三色平行笔触 → 一笔横穿拖混 → 两个厚涂点
       currentPigment = PIGMENTS[3]; // 石青
