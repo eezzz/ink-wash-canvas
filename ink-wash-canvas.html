@@ -100,7 +100,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b36</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b37</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel">
   <div class="row swatches" id="swatches"></div>
@@ -113,7 +113,7 @@
     <span class="ctl">笔锋 <input type="range" id="brush" min="0.007" max="0.85" step="0.003" value="0.22"></span>
     <span class="ctl">浓淡 <input type="range" id="conc" min="0.05" max="1" step="0.01" value="0.85"></span>
     <span class="ctl">水分 <input type="range" id="water" min="0" max="1" step="0.01" value="0.35"></span>
-    <span class="ctl">粘稠 <input type="range" id="visc" min="0" max="1" step="0.01" value="0.7"></span>
+    <span class="ctl">粘稠 <input type="range" id="visc" min="0" max="1" step="0.01" value="0.5"></span>
     <span class="ctl">防抖 <input type="range" id="stab" min="0" max="0.9" step="0.01" value="0.45"></span>
   </div>
   <div class="row">
@@ -292,6 +292,7 @@ uniform float radius;
 uniform vec2 dir;
 uniform float seed;
 uniform float cover;   // 遮盖率：浓稠颜料把底色刮走替换，稀薄则罩染混色
+uniform float pickup;  // 蘸色率：稀料沾起底下湿颜料就地调和（笔带底色）
 float hash (vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
   p += dot(p, p + 45.32);
@@ -321,8 +322,14 @@ void main () {
   float tear = smoothstep(0.22, 0.62, b1 + core);
   float m = core * tear * ridges;
   vec4 base = texture(uTarget, vUv);
-  float k = clamp(m * cover, 0.0, 0.95); // 覆盖式合成：厚涂遮底，薄涂罩染
-  fragColor = base * (1.0 - k) + color * m;
+  float k = clamp(m * cover, 0.0, 0.95); // 覆盖式合成：厚涂遮底；cover=0 时退化为纯加性调和
+  // 蘸色调和：笔上颜料与底下湿颜料按 pickup 比例混合后落纸
+  vec3 brushPig = color.rgb / max(color.a, 1e-4);
+  vec3 basePig  = base.rgb / max(base.a, 1e-3);
+  float baseCov = 1.0 - exp(-base.a * 2.0);
+  vec3 dep = mix(brushPig, basePig, pickup * baseCov);
+  fragColor = vec4(base.rgb * (1.0 - k) + dep * (color.a * m),
+                   base.a  * (1.0 - k) + color.a * m);
 }`);
 
 // 抬笔时：笔画层按颜色合入染料场
@@ -740,7 +747,8 @@ function oilStamp(x, y, dirx, diry, wScale, amt) {
   gl.uniform1f(oilStampProgram.uniforms.radius, correctRadius((brushSize * wScale) / 100));
   gl.uniform2f(oilStampProgram.uniforms.dir, dirx, diry);
   gl.uniform1f(oilStampProgram.uniforms.seed, oilSeed);
-  gl.uniform1f(oilStampProgram.uniforms.cover, 0.12 + 0.8 * oilVisc); // 粘稠→覆盖，稀薄→调和
+  gl.uniform1f(oilStampProgram.uniforms.cover, 0.8 * oilVisc);          // 粘稠→覆盖；0 = 纯加性调和
+  gl.uniform1f(oilStampProgram.uniforms.pickup, 0.65 * (1 - oilVisc));  // 稀薄→笔沾底色调和
   const c = hexToRGB(currentPigment.hex);
   gl.uniform4f(oilStampProgram.uniforms.color, c.r * amt, c.g * amt, c.b * amt, amt);
   gl.uniform1i(oilStampProgram.uniforms.uTarget, dye.read.attach(0));
@@ -1053,7 +1061,7 @@ document.getElementById('brush').addEventListener('input', e => {
   brushSize = parseFloat(e.target.value);
 });
 // —— 调墨与手感 ——
-let inkConc = 0.85, inkWater = 0.35, stabAmt = 0.45, oilVisc = 0.7;
+let inkConc = 0.85, inkWater = 0.35, stabAmt = 0.45, oilVisc = 0.5;
 document.getElementById('conc').addEventListener('input', e => { inkConc = parseFloat(e.target.value); });
 document.getElementById('water').addEventListener('input', e => { inkWater = parseFloat(e.target.value); });
 document.getElementById('stab').addEventListener('input', e => { stabAmt = parseFloat(e.target.value); });
@@ -1384,11 +1392,11 @@ if (location.search.includes('selftest')) {
       await strokePath([[0.2, 0.45], ...P(26, t => [0.2 + 0.28 * t, 0.45, 9])], 60);
       currentPigment = PIGMENTS[0]; // 钛白：竖穿三色拖混提亮
       await strokePath([[0.34, 0.15], ...P(30, t => [0.34, 0.15 + 0.42 * t, 10])], 60);
-      // 低粘稠调和：稀料横穿白色竖笔应混色而非覆盖
-      oilVisc = 0.12;
+      // 低粘稠调和：稀料横穿白色竖笔应混色而非覆盖（蘸色+加性）
+      oilVisc = 0.08;
       currentPigment = PIGMENTS[2]; // 花青
       await strokePath([[0.2, 0.56], ...P(26, t => [0.2 + 0.28 * t, 0.56, 9])], 60);
-      oilVisc = 0.7;
+      oilVisc = 0.9; // 高粘稠厚涂点（对照覆盖行为）
       currentPigment = PIGMENTS[7]; // 胭脂：厚涂点
       await strokePath([[0.58, 0.3], ...P(3, t => [0.58 + 0.008 * t, 0.3 + 0.006 * t, 20])], 300);
       currentPigment = PIGMENTS[1];
