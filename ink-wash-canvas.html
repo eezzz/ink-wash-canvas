@@ -112,7 +112,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b39</p></div>
+<div class="title"><h1>水墨流彩</h1><p>INK WASH CANVAS · b40</p></div>
 <div class="hint" id="hint">选 色 · 点 染 · 交 融</div>
 <div class="panel" id="panel">
   <div class="row swatches" id="swatches"></div>
@@ -1430,8 +1430,6 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// 开卷一点淡墨（晕染笔时）
-if (canvasMode === 'ink' && brushTool === 'bloom') clickBloom(0.5, 0.55, PIGMENTS[1]);
 requestAnimationFrame(frame);
 
 // ---------- 自测模式：?selftest 自动书写五个基本笔画（页面内合成事件，不占用系统鼠标） ----------
